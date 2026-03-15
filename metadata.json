@@ -1,0 +1,7 @@
+{
+  "name": "Fractal Audio Visualizer",
+  "description": "A reactive visualizer that uses generative mathematical fractals with editable shape and color, reacting to microphone input.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
