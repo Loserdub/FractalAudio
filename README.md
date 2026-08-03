@@ -1,7 +1,7 @@
 # 🌀 FractalAudio
 ### *Algorithmic visualization driven by real-time audio analysis.*
 
-Created by **Justin Tyler Ray (jray)** • [jray.me](https://jray.me)  
+Created by **Justin Tyler Ray (jray)** • [trustnodelogic.com](https://trustnodelogic.com)  
 **Live Demo:** [FractalAudio](https://loserdub.github.io/FractalAudio/)
 
 ---
@@ -61,7 +61,7 @@ To run the FractalAudio environment on your local machine:
 FractalAudio is part of the broader **JRAY** creative developer ecosystem—a collection of tools and experiments exploring the intersection of human intent, auditory processing, and algorithmic precision.
 
 *   **Developer:** Justin Tyler Ray
-*   **Portfolio:**[jray.me](https://jray.me)
+*   **Portfolio:** [trustnodelogic.com](https://trustnodelogic.com)
 *   **GitHub:** [loserdub](https://github.com/loserdub)
 
 ---

@@ -1,7 +1,22 @@
 import React, { useEffect, useRef } from 'react';
 import { vertexShaderSource, fragmentShaderSource } from '../shaders/fractal';
 
+export interface AudioMetrics {
+  sub: number;
+  kick: number;
+  lowMid: number;
+  snare: number;
+  presence: number;
+  treble: number;
+  air: number;
+  isKickBeat: boolean;
+  isSnareBeat: boolean;
+  kickIntensity: number;
+  snareIntensity: number;
+}
+
 interface VisualizerProps {
+  canvasRef?: React.RefObject<HTMLCanvasElement | null>;
   analyser: AnalyserNode | null;
   zoom: number;
   offsetX: number;
@@ -10,40 +25,40 @@ interface VisualizerProps {
   colorBase: { h: number; s: number; l: number };
   juliaC: { x: number; y: number };
   sensitivity: number;
+  geometryMode: number;
+  kaleidoscopeFolds: number;
+  rotSpeed: number;
+  glowIntensity: number;
+  onAudioMetricsUpdate?: (metrics: AudioMetrics) => void;
 }
 
 export const Visualizer: React.FC<VisualizerProps> = (props) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const internalCanvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = props.canvasRef || internalCanvasRef;
+
   const requestRef = useRef<number>(0);
   const startTimeRef = useRef<number>(Date.now());
   
-  // Store props in a ref to access them in the render loop without restarting it
   const propsRef = useRef(props);
-  
-  // Update props ref whenever props change
   useEffect(() => {
     propsRef.current = props;
   }, [props]);
 
-  // WebGL context and program refs
   const glRef = useRef<WebGLRenderingContext | null>(null);
   const programRef = useRef<WebGLProgram | null>(null);
-  
-  // Uniform locations
   const locationsRef = useRef<Record<string, WebGLUniformLocation | null>>({});
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const gl = canvas.getContext('webgl');
+    const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
     if (!gl) {
       console.error('WebGL not supported');
       return;
     }
     glRef.current = gl;
 
-    // Create Shaders
     const createShader = (type: number, source: string) => {
       const shader = gl.createShader(type);
       if (!shader) return null;
@@ -62,7 +77,6 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
 
     if (!vertexShader || !fragmentShader) return;
 
-    // Create Program
     const program = gl.createProgram();
     if (!program) return;
     gl.attachShader(program, vertexShader);
@@ -77,24 +91,15 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     gl.useProgram(program);
     programRef.current = program;
 
-    // Set up geometry (full screen quad)
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    const positions = [
-      -1, -1,
-       1, -1,
-      -1,  1,
-      -1,  1,
-       1, -1,
-       1,  1,
-    ];
+    const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
     const positionLocation = gl.getAttribLocation(program, 'a_position');
     gl.enableVertexAttribArray(positionLocation);
     gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
-    // Get uniform locations
     locationsRef.current = {
       u_resolution: gl.getUniformLocation(program, 'u_resolution'),
       u_time: gl.getUniformLocation(program, 'u_time'),
@@ -106,9 +111,16 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_audio_low: gl.getUniformLocation(program, 'u_audio_low'),
       u_audio_mid: gl.getUniformLocation(program, 'u_audio_mid'),
       u_audio_high: gl.getUniformLocation(program, 'u_audio_high'),
+      u_audio_sub: gl.getUniformLocation(program, 'u_audio_sub'),
+      u_audio_snare: gl.getUniformLocation(program, 'u_audio_snare'),
+      u_beat_kick: gl.getUniformLocation(program, 'u_beat_kick'),
+      u_beat_snare: gl.getUniformLocation(program, 'u_beat_snare'),
+      u_geometry_mode: gl.getUniformLocation(program, 'u_geometry_mode'),
+      u_kaleidoscope_folds: gl.getUniformLocation(program, 'u_kaleidoscope_folds'),
+      u_rot_speed: gl.getUniformLocation(program, 'u_rot_speed'),
+      u_glow_intensity: gl.getUniformLocation(program, 'u_glow_intensity'),
     };
 
-    // Resize handler
     const handleResize = () => {
       if (canvas && gl) {
         const dpr = window.devicePixelRatio || 1;
@@ -121,11 +133,20 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     window.addEventListener('resize', handleResize);
     handleResize();
 
-    // Start Render Loop
     let dataArray: Uint8Array | null = null;
-    let smoothedLow = 0;
-    let smoothedMid = 0;
-    let smoothedHigh = 0;
+    let smoothedLow = 0, smoothedMid = 0, smoothedHigh = 0;
+    let smoothedSub = 0, smoothedSnare = 0;
+    
+    let kickTrigger = 0;
+    let snareTrigger = 0;
+
+    const HISTORY_SIZE = 43;
+    const historySub: number[] = new Array(HISTORY_SIZE).fill(0);
+    const historySnare: number[] = new Array(HISTORY_SIZE).fill(0);
+    let historyIdx = 0;
+
+    let lastKickTime = 0;
+    let lastSnareTime = 0;
 
     const render = () => {
       const gl = glRef.current;
@@ -139,56 +160,92 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       }
 
       const time = (Date.now() - startTimeRef.current) * 0.001;
+      const nowMs = Date.now();
       
       if (canvasRef.current) {
-         gl.uniform2f(locs.u_resolution, canvasRef.current.width, canvasRef.current.height);
+        gl.uniform2f(locs.u_resolution, canvasRef.current.width, canvasRef.current.height);
       }
 
-      // Audio Processing
-      let targetLow = 0, targetMid = 0, targetHigh = 0;
+      let subVal = 0, kickVal = 0, lowMidVal = 0, snareVal = 0, presVal = 0, trebVal = 0, airVal = 0;
+      let isKickBeat = false, isSnareBeat = false;
+
       if (currentProps.analyser) {
         if (!dataArray || dataArray.length !== currentProps.analyser.frequencyBinCount) {
           dataArray = new Uint8Array(currentProps.analyser.frequencyBinCount);
         }
         currentProps.analyser.getByteFrequencyData(dataArray);
-        
-        // With fftSize 2048, frequencyBinCount is 1024.
-        // Assuming ~44.1kHz sample rate, each bin is ~21.5Hz.
-        // Bass: 20-250Hz -> bins 1-11
-        // Mids: 250-2000Hz -> bins 12-93
-        // Highs: 2000-10000Hz -> bins 94-465
-        
-        let lowMax = 0, midMax = 0, highMax = 0;
-        let lowSum = 0, midSum = 0, highSum = 0;
-        
-        for (let i = 1; i < 465; i++) {
-          // Apply a curve to make peaks stand out more
-          const val = Math.pow(dataArray[i] / 255.0, 1.5); 
-          
-          if (i < 12) {
-            lowSum += val;
-            if (val > lowMax) lowMax = val;
-          } else if (i < 94) {
-            midSum += val;
-            if (val > midMax) midMax = val;
-          } else {
-            highSum += val;
-            if (val > highMax) highMax = val;
-          }
+
+        let subSum = 0, kickSum = 0, lowMidSum = 0, snareSum = 0, presSum = 0, trebSum = 0, airSum = 0;
+
+        for (let i = 1; i < 930; i++) {
+          const val = Math.pow(dataArray[i] / 255.0, 1.4);
+
+          if (i <= 3) subSum += val;
+          else if (i <= 7) kickSum += val;
+          else if (i <= 23) lowMidSum += val;
+          else if (i <= 93) snareSum += val;
+          else if (i <= 232) presSum += val;
+          else if (i <= 465) trebSum += val;
+          else if (i <= 930) airSum += val;
         }
-        
-        // Blend average and peak for a dynamic, punchy feel
-        targetLow = ((lowSum / 11) * 0.3 + lowMax * 0.7) * currentProps.sensitivity;
-        targetMid = ((midSum / 82) * 0.3 + midMax * 0.7) * currentProps.sensitivity;
-        targetHigh = ((highSum / 371) * 0.3 + highMax * 0.7) * currentProps.sensitivity;
+
+        subVal = (subSum / 3) * currentProps.sensitivity;
+        kickVal = (kickSum / 4) * currentProps.sensitivity;
+        lowMidVal = (lowMidSum / 16) * currentProps.sensitivity;
+        snareVal = (snareSum / 70) * currentProps.sensitivity;
+        presVal = (presSum / 139) * currentProps.sensitivity;
+        trebVal = (trebSum / 233) * currentProps.sensitivity;
+        airVal = (airSum / 465) * currentProps.sensitivity;
+
+        const avgSub = historySub.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
+        const avgSnare = historySnare.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
+
+        historySub[historyIdx] = subVal + kickVal;
+        historySnare[historyIdx] = snareSum;
+        historyIdx = (historyIdx + 1) % HISTORY_SIZE;
+
+        if ((subVal + kickVal) > Math.max(0.15, avgSub * 1.45) && (nowMs - lastKickTime > 180)) {
+          isKickBeat = true;
+          kickTrigger = 1.0;
+          lastKickTime = nowMs;
+        }
+
+        if ((snareVal + presVal) > Math.max(0.12, avgSnare * 1.55) && (nowMs - lastSnareTime > 140)) {
+          isSnareBeat = true;
+          snareTrigger = 1.0;
+          lastSnareTime = nowMs;
+        }
       }
 
-      // Smooth the values (easing) for fluid visual transitions
-      smoothedLow += (targetLow - smoothedLow) * 0.15;
-      smoothedMid += (targetMid - smoothedMid) * 0.15;
-      smoothedHigh += (targetHigh - smoothedHigh) * 0.15;
+      kickTrigger *= 0.88;
+      snareTrigger *= 0.88;
 
-      // Update Uniforms
+      const targetLow = (subVal * 0.5 + kickVal * 0.5);
+      const targetMid = (lowMidVal * 0.4 + snareVal * 0.6);
+      const targetHigh = (presVal * 0.3 + trebVal * 0.4 + airVal * 0.3);
+
+      smoothedLow += (targetLow - smoothedLow) * 0.2;
+      smoothedMid += (targetMid - smoothedMid) * 0.2;
+      smoothedHigh += (targetHigh - smoothedHigh) * 0.2;
+      smoothedSub += (subVal - smoothedSub) * 0.2;
+      smoothedSnare += (snareVal - smoothedSnare) * 0.2;
+
+      if (currentProps.onAudioMetricsUpdate) {
+        currentProps.onAudioMetricsUpdate({
+          sub: smoothedSub,
+          kick: kickVal,
+          lowMid: lowMidVal,
+          snare: smoothedSnare,
+          presence: presVal,
+          treble: trebVal,
+          air: airVal,
+          isKickBeat,
+          isSnareBeat,
+          kickIntensity: kickTrigger,
+          snareIntensity: snareTrigger
+        });
+      }
+
       gl.uniform1f(locs.u_time, time);
       gl.uniform1f(locs.u_zoom, currentProps.zoom);
       gl.uniform2f(locs.u_offset, currentProps.offsetX, currentProps.offsetY);
@@ -199,6 +256,15 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       gl.uniform1f(locs.u_audio_low, smoothedLow);
       gl.uniform1f(locs.u_audio_mid, smoothedMid);
       gl.uniform1f(locs.u_audio_high, smoothedHigh);
+      gl.uniform1f(locs.u_audio_sub, smoothedSub);
+      gl.uniform1f(locs.u_audio_snare, smoothedSnare);
+      gl.uniform1f(locs.u_beat_kick, kickTrigger);
+      gl.uniform1f(locs.u_beat_snare, snareTrigger);
+
+      gl.uniform1i(locs.u_geometry_mode, currentProps.geometryMode);
+      gl.uniform1f(locs.u_kaleidoscope_folds, currentProps.kaleidoscopeFolds);
+      gl.uniform1f(locs.u_rot_speed, currentProps.rotSpeed);
+      gl.uniform1f(locs.u_glow_intensity, currentProps.glowIntensity);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       
@@ -211,7 +277,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(requestRef.current);
     };
-  }, []); // Run once on mount
+  }, [canvasRef]);
 
   return (
     <canvas 
