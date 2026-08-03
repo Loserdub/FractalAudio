@@ -180,26 +180,29 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         let subSum = 0, kickSum = 0, lowMidSum = 0, snareSum = 0, presSum = 0, trebSum = 0, airSum = 0;
 
         for (let i = 1; i < 930; i++) {
-          const val = Math.pow(dataArray[i] / 255.0, 1.35); // Enhanced non-linear dynamic range
+          const val = Math.pow(dataArray[i] / 255.0, 1.2); // Smooth linear-logarithmic dynamic scale
 
+          // Frequency mapping (assuming ~44.1kHz / 2048 fft -> ~21.5Hz per bin):
+          // Sub-Bass & Bass (20Hz - 250Hz): Bins 1..12
           if (i <= 3) subSum += val;
-          else if (i <= 7) kickSum += val;
-          else if (i <= 23) lowMidSum += val;
-          else if (i <= 93) snareSum += val;
-          else if (i <= 232) presSum += val;
-          else if (i <= 465) trebSum += val;
+          else if (i <= 12) kickSum += val;
+          // Mids (250Hz - 4kHz): Bins 13..186
+          else if (i <= 40) lowMidSum += val;
+          else if (i <= 186) snareSum += val;
+          // Treble & Highs (4kHz - 20kHz): Bins 187..930
+          else if (i <= 350) presSum += val;
+          else if (i <= 650) trebSum += val;
           else if (i <= 930) airSum += val;
         }
 
-        // Apply 1.6x baseline gain boost
-        const gain = currentProps.sensitivity * 1.6;
+        const gain = currentProps.sensitivity * 1.2;
         subVal = (subSum / 3) * gain;
-        kickVal = (kickSum / 4) * gain;
-        lowMidVal = (lowMidSum / 16) * gain;
-        snareVal = (snareSum / 70) * gain;
-        presVal = (presSum / 139) * gain;
-        trebVal = (trebSum / 233) * gain;
-        airVal = (airSum / 465) * gain;
+        kickVal = (kickSum / 9) * gain;
+        lowMidVal = (lowMidSum / 28) * gain;
+        snareVal = (snareSum / 146) * gain;
+        presVal = (presSum / 164) * gain;
+        trebVal = (trebSum / 300) * gain;
+        airVal = (airSum / 280) * gain;
 
         const avgSub = historySub.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
         const avgSnare = historySnare.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
@@ -208,31 +211,36 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         historySnare[historyIdx] = snareSum;
         historyIdx = (historyIdx + 1) % HISTORY_SIZE;
 
-        if ((subVal + kickVal) > Math.max(0.12, avgSub * 1.35) && (nowMs - lastKickTime > 160)) {
+        if ((subVal + kickVal) > Math.max(0.15, avgSub * 1.30) && (nowMs - lastKickTime > 180)) {
           isKickBeat = true;
           kickTrigger = 1.0;
           lastKickTime = nowMs;
         }
 
-        if ((snareVal + presVal) > Math.max(0.10, avgSnare * 1.40) && (nowMs - lastSnareTime > 120)) {
+        if ((snareVal + presVal) > Math.max(0.12, avgSnare * 1.35) && (nowMs - lastSnareTime > 140)) {
           isSnareBeat = true;
           snareTrigger = 1.0;
           lastSnareTime = nowMs;
         }
       }
 
-      kickTrigger *= 0.88;
-      snareTrigger *= 0.88;
+      // Smooth decay factor on beat triggers for glowing ember transitions
+      kickTrigger *= 0.90;
+      snareTrigger *= 0.90;
 
-      const targetLow = (subVal * 0.5 + kickVal * 0.5);
-      const targetMid = (lowMidVal * 0.4 + snareVal * 0.6);
-      const targetHigh = (presVal * 0.3 + trebVal * 0.4 + airVal * 0.3);
+      // Apply smooth exponential scaling (Math.pow(bass, 2)) to Sub-Bass/Bass to avoid erratic jumping
+      const rawBass = (subVal * 0.6 + kickVal * 0.4);
+      const targetLow = Math.min(1.0, Math.pow(rawBass, 2.0));
+      const targetMid = Math.min(1.0, (lowMidVal * 0.5 + snareVal * 0.5));
+      const targetHigh = Math.min(1.0, (presVal * 0.3 + trebVal * 0.4 + airVal * 0.3));
 
-      smoothedLow += (targetLow - smoothedLow) * 0.25;
-      smoothedMid += (targetMid - smoothedMid) * 0.25;
-      smoothedHigh += (targetHigh - smoothedHigh) * 0.25;
-      smoothedSub += (subVal - smoothedSub) * 0.25;
-      smoothedSnare += (snareVal - smoothedSnare) * 0.25;
+      // Low-pass linear interpolation (lerp) for fluid, liquid-like reactivity
+      const lerpAlpha = 0.10;
+      smoothedLow += (targetLow - smoothedLow) * lerpAlpha;
+      smoothedMid += (targetMid - smoothedMid) * lerpAlpha;
+      smoothedHigh += (targetHigh - smoothedHigh) * lerpAlpha;
+      smoothedSub += (Math.min(1.0, Math.pow(subVal, 2.0)) - smoothedSub) * lerpAlpha;
+      smoothedSnare += (snareVal - smoothedSnare) * lerpAlpha;
 
       if (currentProps.onAudioMetricsUpdate) {
         currentProps.onAudioMetricsUpdate({

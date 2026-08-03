@@ -15,15 +15,15 @@ uniform vec2 u_offset;
 uniform vec2 u_c;
 uniform int u_iterations;
 uniform vec3 u_color_base;
-uniform float u_audio_low;   // Overall Bass
-uniform float u_audio_mid;   // Overall Mids
-uniform float u_audio_high;  // Overall Highs
+uniform float u_audio_low;   // Exponential Sub-bass / Bass (20-250Hz)
+uniform float u_audio_mid;   // Mids (250Hz-4kHz)
+uniform float u_audio_high;  // Highs / Treble (4kHz-20kHz)
 
 // Multi-Band & Beat Transient Uniforms
-uniform float u_audio_sub;   // Sub-bass & Plosives
-uniform float u_audio_snare; // Snare crack & Presence
-uniform float u_beat_kick;   // Transient Kick Beat (0.0 - 1.0)
-uniform float u_beat_snare;  // Transient Snare / Plosive Beat (0.0 - 1.0)
+uniform float u_audio_sub;   // Sub-bass pulse
+uniform float u_audio_snare; // Snare presence
+uniform float u_beat_kick;   // Smoothed kick transient (0.0 - 1.0)
+uniform float u_beat_snare;  // Smoothed snare transient (0.0 - 1.0)
 
 // Geometry & FX Uniforms
 uniform int u_geometry_mode;        // 0: Classic 2D Liquid, 1: 3D Mandelbulb, 2: 3D Julia, 3: 3D Ink Flow, 4: Sri Yantra, 5: Metatron, 6: Torus Knot, 7: Pyramid, 8: Tunnel
@@ -32,10 +32,38 @@ uniform float u_kaleidoscope_folds; // 0, 4, 6, 8, 12, 16
 uniform float u_rot_speed;
 uniform float u_glow_intensity;
 
-// HSL to RGB conversion
+// HSL to RGB conversion with luminance capping
 vec3 hsl2rgb(vec3 c) {
     vec3 rgb = clamp(abs(mod(c.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
     return c.z + c.y * (rgb - 0.5) * (1.0 - abs(2.0 * c.z - 1.0));
+}
+
+// Procedural Cosine Color Palette Generator for Deep Aesthetic Drift
+vec3 cosPalette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+    return a + b * cos(6.2831853 * (c * t + d));
+}
+
+// Rich Deep Dynamic Color Palettes (Oceanic Cyan-Purple, Gold-Emerald, Obsidian-Amethyst)
+vec3 getDynamicPalette(float t, float colorSelect) {
+    // Smooth blending between deep curated palettes based on colorSelect and u_time
+    vec3 col1 = cosPalette(t, vec3(0.08, 0.12, 0.22), vec3(0.35, 0.30, 0.40), vec3(1.0, 1.0, 1.0), vec3(0.00, 0.33, 0.67)); // Deep Oceanic Cyan-Purple
+    vec3 col2 = cosPalette(t, vec3(0.12, 0.10, 0.05), vec3(0.40, 0.32, 0.20), vec3(1.0, 1.0, 1.0), vec3(0.15, 0.45, 0.05)); // Obsidian Gold-Emerald
+    vec3 col3 = cosPalette(t, vec3(0.10, 0.06, 0.16), vec3(0.38, 0.28, 0.42), vec3(1.0, 1.0, 0.8), vec3(0.60, 0.80, 0.20)); // Dark Violet-Rose
+    
+    float pFactor = mod(colorSelect * 3.0, 3.0);
+    if (pFactor < 1.0) return mix(col1, col2, pFactor);
+    if (pFactor < 2.0) return mix(col2, col3, pFactor - 1.0);
+    return mix(col3, col1, pFactor - 2.0);
+}
+
+// ACES Filmic Tone Mapping to prevent overexposure & blown-out whites
+vec3 toneMapACES(vec3 x) {
+    float a = 2.51;
+    float b = 0.03;
+    float c = 2.43;
+    float d = 0.59;
+    float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
 }
 
 // 3D Rotation Matrices
@@ -66,18 +94,19 @@ vec2 applyKaleidoscope(vec2 p, float folds) {
 }
 
 // ----------------------------------------------------
-// CLASSIC 2D LIQUID JULIA FRACTAL RENDERER
+// CLASSIC 2D LIQUID JULIA FRACTAL RENDERER (Refactored for ~45% Scale Down)
 // ----------------------------------------------------
 vec4 renderLiquidJulia2D(vec2 uv) {
-    float angle = u_audio_mid * 0.3 + u_beat_snare * 0.4;
+    float angle = u_audio_mid * 0.15 + u_beat_snare * 0.1;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
     
-    float dynamicZoom = u_zoom * (1.0 - u_audio_low * 0.2 - u_beat_kick * 0.25);
+    // Scaled down by ~45% for breathing room and dynamic depth
+    float dynamicZoom = u_zoom * 2.2 * (1.0 - u_audio_low * 0.08 - u_beat_kick * 0.05);
     vec2 p = rot * uv * dynamicZoom + u_offset;
     
     vec2 c = u_c + vec2(
-        sin(u_time * 0.5 + u_audio_sub) * 0.05 * u_audio_low + u_beat_kick * 0.06, 
-        cos(u_time * 0.3 - u_audio_high) * 0.05 * u_audio_mid + u_beat_snare * 0.06
+        sin(u_time * 0.15 + u_audio_sub * 0.5) * 0.02 * u_audio_mid + u_beat_kick * 0.02, 
+        cos(u_time * 0.12 - u_audio_high * 0.5) * 0.02 * u_audio_mid + u_beat_snare * 0.02
     );
     
     vec2 z = p;
@@ -103,37 +132,41 @@ vec4 renderLiquidJulia2D(vec2 uv) {
     vec3 color = vec3(0.0);
     if (iter < u_iterations) {
         float t = smooth_iter / float(u_iterations);
-        float hue = u_color_base.x + t * 0.6 + u_time * 0.05 + u_audio_high * 0.4 + u_beat_kick * 0.2;
-        float sat = clamp(u_color_base.y + u_audio_mid * 0.6 + u_beat_snare * 0.3, 0.0, 1.0);
-        float light = clamp(u_color_base.z * (1.0 - t) + u_audio_low * 0.4 + u_beat_kick * 0.3, 0.0, 1.0);
+        // Palette drift over time with treble shifting tone subtly
+        float palettePos = t * 0.7 + u_time * 0.02 + u_audio_high * 0.15 + u_beat_kick * 0.08;
+        vec3 basePal = getDynamicPalette(palettePos, u_color_base.x);
         
-        color = hsl2rgb(vec3(hue, sat, light));
-        color += vec3(u_audio_high * 0.8 * t + u_beat_snare * 0.4);
+        // Controlled, non-blinding luminance
+        float light = clamp(0.15 + u_color_base.z * 0.3 * (1.0 - t) + u_audio_low * 0.12, 0.0, 0.65);
+        color = basePal * light * (1.2 + u_glow_intensity * 0.3);
+        color += basePal * u_audio_high * 0.25 * t;
     } else {
-        float corePulse = u_audio_low * 0.25 + u_beat_kick * 0.3;
-        color = vec3(corePulse * u_color_base.x, corePulse * 0.5, corePulse);
+        // Core dark obsidian pulse
+        float corePulse = 0.04 + u_audio_low * 0.08 + u_beat_kick * 0.06;
+        color = vec3(0.01, 0.015, 0.03) + getDynamicPalette(u_color_base.x, u_color_base.x) * corePulse;
     }
 
-    if (u_fx_mode == 2 || u_beat_snare > 0.6) {
-        color.r += u_beat_snare * 0.3;
-        color.b += u_beat_kick * 0.2;
+    if (u_fx_mode == 2 || u_beat_snare > 0.7) {
+        color.r += u_beat_snare * 0.08;
+        color.b += u_beat_kick * 0.06;
     }
 
+    color = toneMapACES(color);
     return vec4(color, 1.0);
 }
 
 // ----------------------------------------------------
-// 3D SDF PRIMITIVES & SACRED GEOMETRY OBJECTS
+// 3D SDF PRIMITIVES & SACRED GEOMETRY OBJECTS (Scaled for dynamic breathing space)
 // ----------------------------------------------------
 
 // 3D Quaternion Julia SDF
 float mapJulia3D(vec3 p, out float trap) {
-    vec4 z = vec4(p, 0.0);
+    vec4 z = vec4(p * 1.5, 0.0); // Scaled down object space
     vec4 c = vec4(
-        u_c.x + sin(u_time * 0.3) * 0.08 * u_audio_mid + u_beat_snare * 0.12, 
+        u_c.x + sin(u_time * 0.15) * 0.04 * u_audio_mid, 
         u_c.y, 
-        sin(u_audio_low) + u_beat_kick * 0.2, 
-        cos(u_audio_high) * 0.2
+        sin(u_audio_low * 0.5) * 0.1, 
+        cos(u_audio_high * 0.5) * 0.1
     );
     float dr2 = 1.0;
     float r2 = 0.0;
@@ -153,17 +186,18 @@ float mapJulia3D(vec3 p, out float trap) {
             2.0*z.x*z.w
         ) + c;
     }
-    return 0.5 * sqrt(r2 / dr2) * log(r2);
+    return 0.5 * sqrt(r2 / dr2) * log(r2) / 1.5;
 }
 
 // 3D Mandelbulb SDF
 float mapMandelbulb(vec3 p, out float trap) {
-    vec3 w = p;
+    vec3 w = p * 1.4; // Scaled down object space
     float dr = 1.0;
     float r = 0.0;
     trap = 1.0;
     
-    float power = 8.0 + u_audio_sub * 5.0 + u_beat_kick * 8.0;
+    // Mids drive power modulation smoothly
+    float power = 8.0 + u_audio_mid * 2.5 + u_beat_kick * 1.5;
 
     for (int i = 0; i < 8; i++) {
         r = length(w);
@@ -176,97 +210,98 @@ float mapMandelbulb(vec3 p, out float trap) {
         dr = pow(r, power - 1.0) * power * dr + 1.0;
 
         float zr = pow(r, power);
-        theta = theta * power + u_time * 0.2 + u_audio_mid * 0.6 + u_beat_snare * 0.5;
-        phi = phi * power + u_audio_high * 0.6;
+        theta = theta * power + u_time * 0.1 + u_audio_mid * 0.2;
+        phi = phi * power + u_audio_high * 0.2;
 
         w = zr * vec3(sin(theta) * cos(phi), sin(phi) * sin(theta), cos(theta));
-        w += p;
+        w += p * 1.4;
     }
-    return 0.5 * log(r) * r / dr;
+    return (0.5 * log(r) * r / dr) / 1.4;
 }
 
-// NEW: 3D Organic Ink Flow / Fluid Dispersion SDF (Replaces old Polyhedron)
+// 3D Organic Ink Flow / Fluid Dispersion SDF
 float mapInkFlow(vec3 p, out float trap) {
-    vec3 q = p;
-    // Fluid Domain Warping
-    float warp = sin(q.x * 2.5 + u_time * 0.8) * cos(q.y * 2.5 - u_audio_sub * 2.5) * sin(q.z * 2.5 + u_beat_kick * 3.5);
-    q += vec3(warp * 0.45);
+    vec3 q = p * 1.4;
+    // Fluid Domain Warping driven by mids
+    float warp = sin(q.x * 2.2 + u_time * 0.4) * cos(q.y * 2.2 - u_audio_mid * 1.2) * sin(q.z * 2.2 + u_audio_low * 0.8);
+    q += vec3(warp * 0.25);
 
-    // Core Fluid Ink Blob
-    float dCore = length(q) - (0.65 + u_audio_sub * 0.4 + u_beat_kick * 0.45);
+    // Core Fluid Ink Blob (Subtle bass pulse)
+    float dCore = length(q) - (0.42 + u_audio_sub * 0.15 + u_beat_kick * 0.1);
     
-    // Tendril Fluid Waves
-    float dTendrils = sin(q.x * 4.5 + u_time * 1.5) * cos(q.y * 4.5 + u_audio_mid) * sin(q.z * 4.5 + u_audio_high) * 0.18;
+    // Tendril Fluid Waves driven by treble/mids
+    float dTendrils = sin(q.x * 3.5 + u_time * 0.8) * cos(q.y * 3.5 + u_audio_mid * 0.8) * sin(q.z * 3.5 + u_audio_high * 0.8) * 0.10;
     
     trap = length(q);
-    return (dCore + dTendrils) * 0.65;
+    return ((dCore + dTendrils) * 0.65) / 1.4;
 }
 
 // Sacred Sri Yantra Mandala SDF
 float mapSriYantra(vec3 p, out float trap) {
-    float r = length(p.xy);
-    float a = atan(p.y, p.x);
+    vec3 pScaled = p * 1.4;
+    float r = length(pScaled.xy);
+    float a = atan(pScaled.y, pScaled.x);
     
-    float ring1 = abs(r - (1.2 + sin(u_time * 0.5 + u_audio_sub) * 0.3 + u_beat_kick * 0.4)) - 0.05;
-    float ring2 = abs(r - 0.8) - 0.03;
-    float ring3 = abs(r - 0.4) - 0.02;
+    float ring1 = abs(r - (0.8 + sin(u_time * 0.3 + u_audio_sub * 0.5) * 0.1 + u_beat_kick * 0.08)) - 0.03;
+    float ring2 = abs(r - 0.52) - 0.02;
+    float ring3 = abs(r - 0.28) - 0.015;
     
-    vec3 q = rotateZ(floor(a * 4.5 + u_audio_mid * 2.5) / 4.5) * p;
-    float tri = max(abs(q.x) * 0.866 + q.y * 0.5, -q.y) - (0.7 + u_beat_kick * 0.4);
+    vec3 q = rotateZ(floor(a * 4.5 + u_audio_mid * 1.0) / 4.5) * pScaled;
+    float tri = max(abs(q.x) * 0.866 + q.y * 0.5, -q.y) - (0.45 + u_beat_kick * 0.1);
     
     trap = r;
-    return max(min(ring1, min(ring2, ring3)), abs(p.z) - 0.15);
+    return max(min(ring1, min(ring2, ring3)), abs(pScaled.z) - 0.10) / 1.4;
 }
 
 // Metatron's Cube & Flower of Life SDF
 float mapMetatronCube(vec3 p, out float trap) {
-    vec3 pScaled = p * (1.2 + u_beat_kick * 0.4);
-    float centerSphere = length(pScaled) - (0.4 + u_audio_sub * 0.2);
+    vec3 pScaled = p * 1.8;
+    float centerSphere = length(pScaled) - (0.30 + u_audio_sub * 0.08);
     
     vec3 absP = abs(pScaled);
-    float outerSpheres = length(absP - vec3(0.8, 0.8, 0.8)) - (0.25 + u_beat_snare * 0.15);
+    float outerSpheres = length(absP - vec3(0.55, 0.55, 0.55)) - (0.16 + u_beat_snare * 0.06);
     
-    float beam = length(vec2(length(p.xy) - 0.8, p.z)) - (0.03 + u_audio_snare * 0.06);
+    float beam = length(vec2(length(pScaled.xy) - 0.55, pScaled.z)) - (0.02 + u_audio_snare * 0.03);
     
-    trap = length(p);
-    return min(min(centerSphere, outerSpheres), beam);
+    trap = length(pScaled);
+    return min(min(centerSphere, outerSpheres), beam) / 1.8;
 }
 
 // 3D Trefoil Torus Knot SDF
 float mapTorusKnot(vec3 p, out float trap) {
-    vec3 q = rotateZ(u_time * 0.4 + u_audio_mid * 1.5) * p;
+    vec3 q = rotateZ(u_time * 0.2 + u_audio_mid * 0.8) * (p * 1.5);
     float r = length(q.xy);
     float a = atan(q.y, q.x);
     
-    vec2 cl = vec2(r - (1.2 + u_beat_kick * 0.4), q.z);
+    vec2 cl = vec2(r - (0.75 + u_beat_kick * 0.15), q.z);
     float angleKnot = a * 1.5;
-    vec2 knotP = vec2(sin(angleKnot), cos(angleKnot)) * 0.35;
+    vec2 knotP = vec2(sin(angleKnot), cos(angleKnot)) * 0.22;
     
-    float knotD = length(cl - knotP) - (0.12 + u_audio_snare * 0.1);
+    float knotD = length(cl - knotP) - (0.08 + u_audio_snare * 0.04);
     trap = r;
-    return knotD;
+    return knotD / 1.5;
 }
 
 // Cybernetic Prism Pyramid SDF
 float mapPrismPyramid(vec3 p, out float trap) {
-    vec3 q = p;
-    q.y += 0.5;
+    vec3 q = p * 1.5;
+    q.y += 0.35;
     
-    float pyr = max(abs(q.x) + q.y, max(abs(q.z) + q.y, -q.y - 1.2));
+    float pyr = max(abs(q.x) + q.y, max(abs(q.z) + q.y, -q.y - 0.8));
     
-    vec3 crystalP = p - vec3(0.0, 1.2 + sin(u_time * 2.0 + u_audio_sub) * 0.3 + u_beat_kick * 0.4, 0.0);
-    crystalP = rotateY(u_time * 2.5 + u_audio_mid) * crystalP;
-    float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) - (0.35 + u_audio_high * 0.3);
+    vec3 crystalP = q - vec3(0.0, 0.8 + sin(u_time * 1.2 + u_audio_sub * 0.5) * 0.15 + u_beat_kick * 0.1, 0.0);
+    crystalP = rotateY(u_time * 1.5 + u_audio_mid * 0.8) * crystalP;
+    float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) - (0.22 + u_audio_high * 0.12);
     
     trap = length(crystalP);
-    return min(pyr, crystal);
+    return min(pyr, crystal) / 1.5;
 }
 
 // Infinite Cosmic Tunnel SDF
 float mapCosmicTunnel(vec3 p, out float trap) {
     float r = length(p.xy);
-    float tunnel = abs(r - (1.8 + u_beat_kick * 0.5)) - 0.1;
-    float rib = abs(sin(p.z * 3.0 + u_time * 4.0 * u_rot_speed + u_audio_sub * 5.0)) - (0.1 + u_audio_snare * 0.15);
+    float tunnel = abs(r - (1.2 + u_beat_kick * 0.2)) - 0.06;
+    float rib = abs(sin(p.z * 2.5 + u_time * 2.0 * u_rot_speed + u_audio_sub * 2.0)) - (0.06 + u_audio_snare * 0.06);
     
     trap = r;
     return max(tunnel, rib);
@@ -276,7 +311,7 @@ float mapCosmicTunnel(vec3 p, out float trap) {
 float mapScene(vec3 p, out float trap) {
     if (u_geometry_mode == 1) return mapMandelbulb(p, trap);
     if (u_geometry_mode == 2) return mapJulia3D(p, trap);
-    if (u_geometry_mode == 3) return mapInkFlow(p, trap); // NEW 3D ORGANIC INK FLOW
+    if (u_geometry_mode == 3) return mapInkFlow(p, trap);
     if (u_geometry_mode == 4) return mapSriYantra(p, trap);
     if (u_geometry_mode == 5) return mapMetatronCube(p, trap);
     if (u_geometry_mode == 6) return mapTorusKnot(p, trap);
@@ -311,23 +346,27 @@ void main() {
     }
     
     if (u_fx_mode == 2 || (u_beat_snare > 0.6 && u_fx_mode > 0)) {
-        uv.x += sin(uv.y * 50.0 + u_time * 20.0) * 0.015 * u_beat_snare;
+        uv.x += sin(uv.y * 30.0 + u_time * 10.0) * 0.005 * u_beat_snare;
     }
 
     uv = applyKaleidoscope(uv, u_kaleidoscope_folds);
 
-    float camDist = 2.5 * u_zoom * (1.0 - u_audio_sub * 0.15 - u_beat_kick * 0.25);
-    float rotY = u_time * 0.2 * u_rot_speed + u_offset.x * 3.0 + u_audio_mid * 0.5;
-    float rotX = u_offset.y * 3.0 + sin(u_time * 0.15) * 0.3;
+    // Camera distance increased to 4.4 * u_zoom for ~45% center object scaling and breathing room
+    float camDist = 4.4 * u_zoom * (1.0 - u_audio_sub * 0.04 - u_beat_kick * 0.03);
+    float rotY = u_time * 0.12 * u_rot_speed + u_offset.x * 3.0 + u_audio_mid * 0.2;
+    float rotX = u_offset.y * 3.0 + sin(u_time * 0.10) * 0.2;
 
     vec3 ro = vec3(0.0, 0.0, -camDist);
+    // Subtle camera position sway driven by sub-bass
+    ro.xy += vec2(sin(u_time * 0.4), cos(u_time * 0.3)) * u_audio_sub * 0.05;
+
     mat3 rotM = rotateY(rotY) * rotateX(rotX);
     ro = rotM * ro;
 
     vec3 rd = rotM * normalize(vec3(uv, 1.5));
 
     float t = 0.0;
-    float maxDist = 10.0;
+    float maxDist = 12.0;
     float trap = 0.0;
     float minStep = 0.001;
     bool hit = false;
@@ -343,11 +382,13 @@ void main() {
             hitPos = p;
             break;
         }
-        t += d * 0.7;
+        t += d * 0.75;
         if (t > maxDist) break;
     }
 
-    vec3 finalColor = vec3(0.0);
+    // Rich, deep dark background base (Deep Obsidian / Dark Charcoal)
+    vec3 bgBase = vec3(0.012, 0.016, 0.032);
+    vec3 finalColor = bgBase;
 
     if (hit) {
         vec3 normal = calcNormal(hitPos);
@@ -356,50 +397,62 @@ void main() {
         float diff = max(dot(normal, lightDir), 0.0);
         vec3 viewDir = normalize(ro - hitPos);
         vec3 halfDir = normalize(lightDir + viewDir);
-        float spec = pow(max(dot(normal, halfDir), 0.0), 32.0) * (1.0 + u_audio_high * 2.5 + u_beat_snare * 4.5);
         
-        float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0) * (1.0 + u_audio_high * 1.8 + u_beat_snare * 3.0);
+        // Controlled, non-blinding specular highlights
+        float spec = pow(max(dot(normal, halfDir), 0.0), 32.0) * (0.5 + u_audio_high * 0.8 + u_beat_snare * 0.6);
+        // Soft edge rim lighting
+        float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0) * (0.4 + u_audio_high * 0.6 + u_beat_snare * 0.5);
         
-        float hue = u_color_base.x + trap * 0.8 + u_time * 0.05 + u_audio_high * 0.35 + u_beat_kick * 0.2;
-        float sat = clamp(u_color_base.y + u_audio_mid * 0.5 + u_beat_snare * 0.3, 0.0, 1.0);
-        float light = clamp(0.2 + diff * 0.5 + spec * 0.4 + u_audio_sub * 0.25 + u_beat_kick * 0.35, 0.0, 1.0);
-
-        vec3 baseRGB = hsl2rgb(vec3(hue, sat, light));
+        // Dynamic procedural palette position with subtle hue drift
+        float palettePos = trap * 0.6 + u_time * 0.02 + u_audio_high * 0.12 + u_beat_kick * 0.06;
+        vec3 baseRGB = getDynamicPalette(palettePos, u_color_base.x);
         
-        finalColor = baseRGB * (diff + 0.3) + vec3(spec) + vec3(0.2, 0.9, 0.4) * rim * u_glow_intensity;
+        float lightIntensity = clamp(0.25 + diff * 0.45 + spec * 0.3 + u_audio_sub * 0.10, 0.0, 0.85);
         
-        float fog = exp(-t * 0.25);
-        finalColor = mix(vec3(0.03, 0.04, 0.07), finalColor, fog);
+        finalColor = baseRGB * lightIntensity + vec3(spec * 0.4) + baseRGB * rim * 0.4 * u_glow_intensity;
+        
+        float fog = exp(-t * 0.18);
+        finalColor = mix(bgBase, finalColor, fog);
     } else {
-        float bgGlow = (1.0 - length(uv)) * (0.15 + u_audio_sub * 0.3 + u_beat_kick * 0.45);
-        finalColor = hsl2rgb(vec3(u_color_base.x + 0.5, 0.8, 0.1)) * bgGlow * u_glow_intensity;
+        // Deep background glow with smooth subtle pulsing
+        float bgGlow = (1.0 - length(uv)) * (0.08 + u_audio_sub * 0.12 + u_beat_kick * 0.08);
+        vec3 palColor = getDynamicPalette(u_color_base.x, u_color_base.x);
+        finalColor = bgBase + palColor * bgGlow * u_glow_intensity * 0.5;
     }
 
+    // Cyber grid effect (FX Mode 1) - Toned down glare
     if (u_fx_mode == 1) {
         float floorY = -1.6;
         if (rd.y < 0.0) {
             float tFloor = (floorY - ro.y) / rd.y;
             if (tFloor > 0.0 && (!hit || tFloor < t)) {
                 vec3 pFloor = ro + rd * tFloor;
-                vec2 grid = abs(fract(pFloor.xz * 1.5 - vec2(0.0, u_time * 2.0 + u_audio_sub * 3.0)) - 0.5);
+                vec2 grid = abs(fract(pFloor.xz * 1.2 - vec2(0.0, u_time * 1.0 + u_audio_sub * 1.5)) - 0.5);
                 float line = min(grid.x, grid.y);
-                float gridGlow = smoothstep(0.06, 0.0, line) * exp(-tFloor * 0.2);
-                finalColor += vec3(0.6, 0.1, 0.9) * gridGlow * (1.0 + u_beat_kick * 2.0);
+                float gridGlow = smoothstep(0.05, 0.0, line) * exp(-tFloor * 0.18);
+                vec3 gridCol = getDynamicPalette(u_time * 0.01 + 0.3, u_color_base.x);
+                finalColor += gridCol * gridGlow * 0.35 * (1.0 + u_beat_kick * 0.5);
             }
         }
     }
 
-    if (u_fx_mode == 2 || u_audio_high > 0.3 || u_beat_snare > 0.2) {
-        finalColor.r += (u_audio_high * 0.15 + u_beat_snare * 0.35);
-        finalColor.b += (u_audio_mid * 0.1 + u_beat_kick * 0.25);
+    // Chromatic edge shift (FX Mode 2)
+    if (u_fx_mode == 2 || u_audio_high > 0.4 || u_beat_snare > 0.5) {
+        finalColor.r += (u_audio_high * 0.04 + u_beat_snare * 0.06);
+        finalColor.b += (u_audio_mid * 0.03 + u_beat_kick * 0.04);
     }
 
+    // Toned-down Particle Dust / Star Flares (FX Mode 3)
     if (u_fx_mode == 3) {
-        float particle = sin(uv.x * 80.0 + u_time * 5.0) * cos(uv.y * 80.0 - u_time * 3.0);
-        if (particle > 0.92) {
-            finalColor += vec3(0.9, 0.95, 1.0) * (particle - 0.92) * 12.0 * (1.0 + u_audio_high * 3.0);
+        float particle = sin(uv.x * 60.0 + u_time * 3.0) * cos(uv.y * 60.0 - u_time * 2.0);
+        if (particle > 0.94) {
+            vec3 starCol = getDynamicPalette(particle + u_time * 0.05, u_color_base.x);
+            finalColor += starCol * (particle - 0.94) * 1.5 * (1.0 + u_audio_high * 0.8);
         }
     }
+
+    // ACES Filmic Tone Mapping to prevent any blown-out bright whites
+    finalColor = toneMapACES(finalColor);
 
     gl_FragColor = vec4(finalColor, 1.0);
 }
