@@ -25,8 +25,8 @@ uniform float u_audio_snare; // Snare crack & Presence
 uniform float u_beat_kick;   // Transient Kick Beat (0.0 - 1.0)
 uniform float u_beat_snare;  // Transient Snare / Plosive Beat (0.0 - 1.0)
 
-// 8 Geometry & FX Uniforms
-uniform int u_geometry_mode;        // 0: Julia, 1: Mandelbulb, 2: Polyhedron, 3: Sri Yantra, 4: Metatron, 5: Torus Knot, 6: Pyramid, 7: Tunnel
+// Geometry & FX Uniforms
+uniform int u_geometry_mode;        // 0: Classic 2D Liquid, 1: 3D Mandelbulb, 2: 3D Julia, 3: 3D Polyhedron, 4: Sri Yantra, 5: Metatron, 6: Torus Knot, 7: Pyramid, 8: Tunnel
 uniform int u_fx_mode;              // 0: None, 1: Cyber Grid, 2: Chromatic Glitch, 3: Particle Dust
 uniform float u_kaleidoscope_folds; // 0, 4, 6, 8, 12, 16
 uniform float u_rot_speed;
@@ -66,10 +66,68 @@ vec2 applyKaleidoscope(vec2 p, float folds) {
 }
 
 // ----------------------------------------------------
-// 8 3D SDF PRIMITIVES & SACRED GEOMETRY OBJECTS
+// CLASSIC 2D LIQUID JULIA FRACTAL RENDERER
+// ----------------------------------------------------
+vec4 renderLiquidJulia2D(vec2 uv) {
+    float angle = u_audio_mid * 0.2 + u_beat_snare * 0.3;
+    mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+    
+    float dynamicZoom = u_zoom * (1.0 - u_audio_low * 0.15 - u_beat_kick * 0.2);
+    vec2 p = rot * uv * dynamicZoom + u_offset;
+    
+    vec2 c = u_c + vec2(
+        sin(u_time * 0.5 + u_audio_sub) * 0.03 * u_audio_low + u_beat_kick * 0.04, 
+        cos(u_time * 0.3 - u_audio_high) * 0.03 * u_audio_mid + u_beat_snare * 0.04
+    );
+    
+    vec2 z = p;
+    int iter = 0;
+    float smooth_iter = 0.0;
+    
+    for (int i = 0; i < 1000; i++) {
+        if (i >= u_iterations) break;
+        
+        float x = (z.x * z.x - z.y * z.y) + c.x;
+        float y = (2.0 * z.x * z.y) + c.y;
+        
+        if ((x * x + y * y) > 4.0) {
+            smooth_iter = float(i) - log2(log2(dot(vec2(x, y), vec2(x, y)))) + 4.0;
+            break;
+        }
+        
+        z.x = x;
+        z.y = y;
+        iter++;
+    }
+    
+    vec3 color = vec3(0.0);
+    if (iter < u_iterations) {
+        float t = smooth_iter / float(u_iterations);
+        float hue = u_color_base.x + t * 0.6 + u_time * 0.05 + u_audio_high * 0.4 + u_beat_kick * 0.2;
+        float sat = clamp(u_color_base.y + u_audio_mid * 0.6 + u_beat_snare * 0.3, 0.0, 1.0);
+        float light = clamp(u_color_base.z * (1.0 - t) + u_audio_low * 0.4 + u_beat_kick * 0.3, 0.0, 1.0);
+        
+        color = hsl2rgb(vec3(hue, sat, light));
+        color += vec3(u_audio_high * 0.8 * t + u_beat_snare * 0.4);
+    } else {
+        float corePulse = u_audio_low * 0.25 + u_beat_kick * 0.3;
+        color = vec3(corePulse * u_color_base.x, corePulse * 0.5, corePulse);
+    }
+
+    // Apply Glitch & Laser Overlay on 2D Liquid mode
+    if (u_fx_mode == 2 || u_beat_snare > 0.6) {
+        color.r += u_beat_snare * 0.3;
+        color.b += u_beat_kick * 0.2;
+    }
+
+    return vec4(color, 1.0);
+}
+
+// ----------------------------------------------------
+// 3D SDF PRIMITIVES & SACRED GEOMETRY OBJECTS
 // ----------------------------------------------------
 
-// 0. 3D Quaternion Julia SDF
+// 3D Quaternion Julia SDF
 float mapJulia3D(vec3 p, out float trap) {
     vec4 z = vec4(p, 0.0);
     vec4 c = vec4(
@@ -99,7 +157,7 @@ float mapJulia3D(vec3 p, out float trap) {
     return 0.5 * sqrt(r2 / dr2) * log(r2);
 }
 
-// 1. 3D Mandelbulb SDF
+// 3D Mandelbulb SDF
 float mapMandelbulb(vec3 p, out float trap) {
     vec3 w = p;
     float dr = 1.0;
@@ -128,29 +186,27 @@ float mapMandelbulb(vec3 p, out float trap) {
     return 0.5 * log(r) * r / dr;
 }
 
-// 2. 3D Wireframe Hypercube / Octahedron SDF
+// 3D Wireframe Octahedron / Polyhedron SDF (FIXED: Rescaled to 0.45 for perfect camera framing)
 float mapPolyhedron(vec3 p, out float trap) {
-    vec3 q = abs(p) - vec3(1.2 + u_audio_sub * 0.4 + u_beat_kick * 0.3);
+    vec3 q = abs(p) - vec3(0.45 + u_audio_sub * 0.15 + u_beat_kick * 0.1);
     float box = length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
     
-    float thickness = 0.05 + u_audio_snare * 0.06 + u_beat_snare * 0.08;
-    float frame = length(vec2(length(p.xy) - 1.0, p.z)) - thickness;
+    float thickness = 0.02 + u_audio_snare * 0.02 + u_beat_snare * 0.03;
+    float frame = length(vec2(length(p.xy) - 0.45, p.z)) - thickness;
     
     trap = length(p);
     return max(box, -frame);
 }
 
-// 3. Sacred Sri Yantra Mandala SDF
+// Sacred Sri Yantra Mandala SDF
 float mapSriYantra(vec3 p, out float trap) {
     float r = length(p.xy);
     float a = atan(p.y, p.x);
     
-    // Concentric Lotus Rings
     float ring1 = abs(r - (1.2 + sin(u_time * 0.5 + u_audio_sub) * 0.2)) - 0.05;
     float ring2 = abs(r - 0.8) - 0.03;
     float ring3 = abs(r - 0.4) - 0.02;
     
-    // 9 Interlocking Sacred Triangles
     vec3 q = rotateZ(floor(a * 4.5 + u_audio_mid * 2.0) / 4.5) * p;
     float tri = max(abs(q.x) * 0.866 + q.y * 0.5, -q.y) - (0.7 + u_beat_kick * 0.3);
     
@@ -158,30 +214,26 @@ float mapSriYantra(vec3 p, out float trap) {
     return max(min(ring1, min(ring2, ring3)), abs(p.z) - 0.15);
 }
 
-// 4. Metatron's Cube & Flower of Life SDF
+// Metatron's Cube & Flower of Life SDF
 float mapMetatronCube(vec3 p, out float trap) {
-    // 13 Sacred Spheres
     vec3 pScaled = p * (1.2 + u_beat_kick * 0.3);
     float centerSphere = length(pScaled) - 0.4;
     
-    // Outer 12 vertices
     vec3 absP = abs(pScaled);
     float outerSpheres = length(absP - vec3(0.8, 0.8, 0.8)) - 0.25;
     
-    // Connecting Laser Cylinder Beams
     float beam = length(vec2(length(p.xy) - 0.8, p.z)) - (0.03 + u_audio_snare * 0.04);
     
     trap = length(p);
     return min(min(centerSphere, outerSpheres), beam);
 }
 
-// 5. 3D Trefoil Torus Knot SDF
+// 3D Trefoil Torus Knot SDF
 float mapTorusKnot(vec3 p, out float trap) {
     vec3 q = rotateZ(u_time * 0.4 + u_audio_mid) * p;
     float r = length(q.xy);
     float a = atan(q.y, q.x);
     
-    // Parametric Trefoil Knot Curve
     vec2 cl = vec2(r - (1.2 + u_beat_kick * 0.3), q.z);
     float angleKnot = a * 1.5;
     vec2 knotP = vec2(sin(angleKnot), cos(angleKnot)) * 0.3;
@@ -191,15 +243,13 @@ float mapTorusKnot(vec3 p, out float trap) {
     return knotD;
 }
 
-// 6. Cybernetic Prism Pyramid (Giza Geometry) SDF
+// Cybernetic Prism Pyramid SDF
 float mapPrismPyramid(vec3 p, out float trap) {
     vec3 q = p;
-    q.y += 0.5; // Shift base
+    q.y += 0.5;
     
-    // Stepped Pyramid Base
     float pyr = max(abs(q.x) + q.y, max(abs(q.z) + q.y, -q.y - 1.2));
     
-    // Floating Glowing Apex Crystal Octahedron
     vec3 crystalP = p - vec3(0.0, 1.2 + sin(u_time * 2.0 + u_audio_sub) * 0.2 + u_beat_kick * 0.3, 0.0);
     crystalP = rotateY(u_time * 2.0) * crystalP;
     float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) - (0.35 + u_audio_high * 0.2);
@@ -208,15 +258,10 @@ float mapPrismPyramid(vec3 p, out float trap) {
     return min(pyr, crystal);
 }
 
-// 7. Infinite Cosmic Tunnel SDF
+// Infinite Cosmic Tunnel SDF
 float mapCosmicTunnel(vec3 p, out float trap) {
     float r = length(p.xy);
-    float a = atan(p.y, p.x);
-    
-    // Tunnel Wall
     float tunnel = abs(r - (1.8 + u_beat_kick * 0.4)) - 0.1;
-    
-    // Audio-driven Ring Ribs
     float rib = abs(sin(p.z * 3.0 + u_time * 4.0 * u_rot_speed + u_audio_sub * 4.0)) - (0.1 + u_audio_snare * 0.1);
     
     trap = r;
@@ -226,13 +271,14 @@ float mapCosmicTunnel(vec3 p, out float trap) {
 // Master Scene Distance Evaluator
 float mapScene(vec3 p, out float trap) {
     if (u_geometry_mode == 1) return mapMandelbulb(p, trap);
-    if (u_geometry_mode == 2) return mapPolyhedron(p, trap);
-    if (u_geometry_mode == 3) return mapSriYantra(p, trap);
-    if (u_geometry_mode == 4) return mapMetatronCube(p, trap);
-    if (u_geometry_mode == 5) return mapTorusKnot(p, trap);
-    if (u_geometry_mode == 6) return mapPrismPyramid(p, trap);
-    if (u_geometry_mode == 7) return mapCosmicTunnel(p, trap);
-    return mapJulia3D(p, trap); // Default 0
+    if (u_geometry_mode == 2) return mapJulia3D(p, trap);
+    if (u_geometry_mode == 3) return mapPolyhedron(p, trap);
+    if (u_geometry_mode == 4) return mapSriYantra(p, trap);
+    if (u_geometry_mode == 5) return mapMetatronCube(p, trap);
+    if (u_geometry_mode == 6) return mapTorusKnot(p, trap);
+    if (u_geometry_mode == 7) return mapPrismPyramid(p, trap);
+    if (u_geometry_mode == 8) return mapCosmicTunnel(p, trap);
+    return mapJulia3D(p, trap);
 }
 
 // Surface Normal Estimation via Gradient
@@ -250,8 +296,16 @@ vec3 calcNormal(vec3 p) {
 // MAIN RAYMARCHING ENGINE & VOLUMETRIC SHADING
 // ----------------------------------------------------
 void main() {
-    // Screen coordinates
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
+
+    // IF MODE == 0: RENDER CLASSIC 2D LIQUID JULIA FRACTAL
+    if (u_geometry_mode == 0) {
+        if (u_kaleidoscope_folds > 0.0) {
+            uv = applyKaleidoscope(uv, u_kaleidoscope_folds);
+        }
+        gl_FragColor = renderLiquidJulia2D(uv);
+        return;
+    }
     
     // Apply Chromatic Glitch FX Shift if active
     if (u_fx_mode == 2 || (u_beat_snare > 0.6 && u_fx_mode > 0)) {
@@ -266,11 +320,11 @@ void main() {
     float rotY = u_time * 0.2 * u_rot_speed + u_offset.x * 3.0 + u_audio_mid * 0.4;
     float rotX = u_offset.y * 3.0 + sin(u_time * 0.15) * 0.3;
 
-    vec3 ro = vec3(0.0, 0.0, -camDist); // Camera Origin
+    vec3 ro = vec3(0.0, 0.0, -camDist);
     mat3 rotM = rotateY(rotY) * rotateX(rotX);
     ro = rotM * ro;
 
-    vec3 rd = rotM * normalize(vec3(uv, 1.5)); // Ray Direction
+    vec3 rd = rotM * normalize(vec3(uv, 1.5));
 
     // Raymarching Loop
     float t = 0.0;
@@ -297,7 +351,6 @@ void main() {
     vec3 finalColor = vec3(0.0);
 
     if (hit) {
-        // Surface Lighting
         vec3 normal = calcNormal(hitPos);
         vec3 lightDir = normalize(vec3(1.0, 2.0, -1.5));
         
@@ -319,13 +372,11 @@ void main() {
         float fog = exp(-t * 0.25);
         finalColor = mix(vec3(0.03, 0.04, 0.07), finalColor, fog);
     } else {
-        // Background Space & Core Audio Pulse Glow
         float bgGlow = (1.0 - length(uv)) * (0.15 + u_audio_sub * 0.25 + u_beat_kick * 0.4);
         finalColor = hsl2rgb(vec3(u_color_base.x + 0.5, 0.8, 0.1)) * bgGlow * u_glow_intensity;
     }
 
     // VISUAL FX OVERLAYS
-    // FX 1: Cyber Synthwave Laser Grid Ground
     if (u_fx_mode == 1) {
         float floorY = -1.6;
         if (rd.y < 0.0) {
@@ -340,13 +391,11 @@ void main() {
         }
     }
 
-    // FX 2: High-frequency & Snare Plosive Chromatic Aberration fringe
     if (u_fx_mode == 2 || u_audio_high > 0.3 || u_beat_snare > 0.2) {
         finalColor.r += (u_audio_high * 0.15 + u_beat_snare * 0.35);
         finalColor.b += (u_audio_mid * 0.1 + u_beat_kick * 0.25);
     }
 
-    // FX 3: Volumetric Particle Dust Orbit
     if (u_fx_mode == 3) {
         float particle = sin(uv.x * 80.0 + u_time * 5.0) * cos(uv.y * 80.0 - u_time * 3.0);
         if (particle > 0.92) {

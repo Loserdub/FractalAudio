@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Settings, Mic, Upload, Music, Play, Pause, Volume2, VolumeX, ChevronUp, Shuffle, Box, Compass, Activity, Zap, Video, Camera, FileDown, Disc, Wand2, Layers } from 'lucide-react';
+import { Settings, Mic, Upload, Music, Play, Pause, Volume2, VolumeX, ChevronUp, Shuffle, Box, Compass, Activity, Zap, Video, Camera, FileDown, Disc, Wand2 } from 'lucide-react';
 import { JULIA_PRESETS } from '../constants';
 import { AudioMode } from '../hooks/useAudioAnalyzer';
 import { AudioMetrics } from './Visualizer';
@@ -108,14 +108,15 @@ export const Controls: React.FC<ControlsProps> = ({
   };
 
   const GEOMETRY_MODES = [
-    { id: 0, label: '3D Julia' },
+    { id: 0, label: 'Classic 2D Liquid' },
     { id: 1, label: '3D Mandelbulb' },
-    { id: 2, label: '3D Polyhedron' },
-    { id: 3, label: 'Sri Yantra Mandala' },
-    { id: 4, label: "Metatron's Cube" },
-    { id: 5, label: '3D Torus Knot' },
-    { id: 6, label: 'Prism Pyramid' },
-    { id: 7, label: 'Cosmic Tunnel' },
+    { id: 2, label: '3D Julia' },
+    { id: 3, label: '3D Polyhedron' },
+    { id: 4, label: 'Sri Yantra Mandala' },
+    { id: 5, label: "Metatron's Cube" },
+    { id: 6, label: '3D Torus Knot' },
+    { id: 7, label: 'Prism Pyramid' },
+    { id: 8, label: 'Cosmic Tunnel' },
   ];
 
   const FX_MODES = [
@@ -155,8 +156,8 @@ export const Controls: React.FC<ControlsProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-white/10">
             <div>
-              <h2 className="text-sm font-mono font-bold tracking-widest uppercase text-white/90">3D GEOMETRIC ENGINE</h2>
-              <span className="text-[10px] font-mono text-lime-400">8 Sacred Objects & FX Overlay Engine</span>
+              <h2 className="text-sm font-mono font-bold tracking-widest uppercase text-white/90">VISUALIZER ENGINE</h2>
+              <span className="text-[10px] font-mono text-lime-400">Classic 2D Liquid & 3D SDF Objects</span>
             </div>
             <button
               onClick={randomize}
@@ -347,11 +348,11 @@ export const Controls: React.FC<ControlsProps> = ({
             )}
           </div>
 
-          {/* 8 3D GEOMETRY OBJECTS SELECTOR */}
+          {/* GEOMETRY & FRACTAL OBJECTS SELECTOR */}
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest text-white/60">
               <Box size={13} className="text-lime-400" />
-              <span>3D Sacred Geometry & Mandala Mode</span>
+              <span>Geometry & Fractal Mode</span>
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               {GEOMETRY_MODES.map((mode) => (
@@ -416,10 +417,32 @@ export const Controls: React.FC<ControlsProps> = ({
             </div>
           </div>
 
-          {/* 3D Controls */}
+          {/* Julia Constant Presets */}
+          {(geometryMode === 0 || geometryMode === 2) && (
+            <div className="space-y-2 pt-1 border-t border-white/10">
+              <div className="text-xs font-mono uppercase tracking-wider text-white/60">Julia Constant Presets</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {JULIA_PRESETS.map((preset) => (
+                  <button
+                    key={preset.name}
+                    onClick={() => setJuliaC({ x: preset.x, y: preset.y })}
+                    className={`px-2.5 py-1.5 text-xs font-mono rounded-lg transition-all text-left ${
+                      Math.abs(juliaC.x - preset.x) < 0.001 && Math.abs(juliaC.y - preset.y) < 0.001
+                        ? 'bg-lime-400 text-black font-bold shadow-sm'
+                        : 'bg-white/5 text-white/70 hover:bg-white/10'
+                    }`}
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Controls Sliders */}
           <div className="space-y-4 pt-1 border-t border-white/10">
             
-            {/* 3D Orbit Speed */}
+            {/* Camera Orbit Speed */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
                 <label>3D Camera Orbit Speed</label>
@@ -473,7 +496,7 @@ export const Controls: React.FC<ControlsProps> = ({
             {/* Zoom */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                <label>3D Camera Depth (Zoom)</label>
+                <label>Camera Depth (Zoom)</label>
                 <span>{zoom.toFixed(2)}</span>
               </div>
               <input
@@ -487,10 +510,10 @@ export const Controls: React.FC<ControlsProps> = ({
               />
             </div>
 
-            {/* Raymarching Complexity / Steps */}
+            {/* Iterations */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                <label>Raymarch Steps (Complexity)</label>
+                <label>Complexity / Steps</label>
                 <span>{iterations}</span>
               </div>
               <input
@@ -503,28 +526,6 @@ export const Controls: React.FC<ControlsProps> = ({
                 className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white"
               />
             </div>
-
-            {/* Julia Constant Presets */}
-            {geometryMode === 0 && (
-              <div className="space-y-2">
-                <div className="text-xs font-mono uppercase tracking-wider text-white/60">3D Quaternion Presets</div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {JULIA_PRESETS.map((preset) => (
-                    <button
-                      key={preset.name}
-                      onClick={() => setJuliaC({ x: preset.x, y: preset.y })}
-                      className={`px-2.5 py-1.5 text-xs font-mono rounded-lg transition-all text-left ${
-                        Math.abs(juliaC.x - preset.x) < 0.001 && Math.abs(juliaC.y - preset.y) < 0.001
-                          ? 'bg-lime-400 text-black font-bold shadow-sm'
-                          : 'bg-white/5 text-white/70 hover:bg-white/10'
-                      }`}
-                    >
-                      {preset.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* Color Base */}
             <div className="space-y-1.5">
