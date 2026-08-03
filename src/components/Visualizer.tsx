@@ -26,6 +26,7 @@ interface VisualizerProps {
   juliaC: { x: number; y: number };
   sensitivity: number;
   geometryMode: number;
+  fxMode: number;
   kaleidoscopeFolds: number;
   rotSpeed: number;
   glowIntensity: number;
@@ -116,6 +117,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_beat_kick: gl.getUniformLocation(program, 'u_beat_kick'),
       u_beat_snare: gl.getUniformLocation(program, 'u_beat_snare'),
       u_geometry_mode: gl.getUniformLocation(program, 'u_geometry_mode'),
+      u_fx_mode: gl.getUniformLocation(program, 'u_fx_mode'),
       u_kaleidoscope_folds: gl.getUniformLocation(program, 'u_kaleidoscope_folds'),
       u_rot_speed: gl.getUniformLocation(program, 'u_rot_speed'),
       u_glow_intensity: gl.getUniformLocation(program, 'u_glow_intensity'),
@@ -262,6 +264,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       gl.uniform1f(locs.u_beat_snare, snareTrigger);
 
       gl.uniform1i(locs.u_geometry_mode, currentProps.geometryMode);
+      gl.uniform1i(locs.u_fx_mode, currentProps.fxMode);
       gl.uniform1f(locs.u_kaleidoscope_folds, currentProps.kaleidoscopeFolds);
       gl.uniform1f(locs.u_rot_speed, currentProps.rotSpeed);
       gl.uniform1f(locs.u_glow_intensity, currentProps.glowIntensity);

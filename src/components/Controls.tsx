@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Settings, Mic, Upload, Music, Play, Pause, Volume2, VolumeX, ChevronUp, Shuffle, Box, Compass, Activity, Zap, Video, Camera, FileDown, Disc } from 'lucide-react';
+import { Settings, Mic, Upload, Music, Play, Pause, Volume2, VolumeX, ChevronUp, Shuffle, Box, Compass, Activity, Zap, Video, Camera, FileDown, Disc, Wand2, Layers } from 'lucide-react';
 import { JULIA_PRESETS } from '../constants';
 import { AudioMode } from '../hooks/useAudioAnalyzer';
 import { AudioMetrics } from './Visualizer';
@@ -28,6 +28,8 @@ interface ControlsProps {
   setSensitivity: (v: number) => void;
   geometryMode: number;
   setGeometryMode: (v: number) => void;
+  fxMode: number;
+  setFxMode: (v: number) => void;
   kaleidoscopeFolds: number;
   setKaleidoscopeFolds: (v: number) => void;
   rotSpeed: number;
@@ -37,7 +39,6 @@ interface ControlsProps {
   randomize: () => void;
   audioMetrics?: AudioMetrics | null;
 
-  // Recording Engine Props
   isRecording: boolean;
   recordingSeconds: number;
   hasSessionKeyframes: boolean;
@@ -78,6 +79,8 @@ export const Controls: React.FC<ControlsProps> = ({
   setSensitivity,
   geometryMode,
   setGeometryMode,
+  fxMode,
+  setFxMode,
   kaleidoscopeFolds,
   setKaleidoscopeFolds,
   rotSpeed,
@@ -108,7 +111,18 @@ export const Controls: React.FC<ControlsProps> = ({
     { id: 0, label: '3D Julia' },
     { id: 1, label: '3D Mandelbulb' },
     { id: 2, label: '3D Polyhedron' },
-    { id: 3, label: 'Sacred Mandala' },
+    { id: 3, label: 'Sri Yantra Mandala' },
+    { id: 4, label: "Metatron's Cube" },
+    { id: 5, label: '3D Torus Knot' },
+    { id: 6, label: 'Prism Pyramid' },
+    { id: 7, label: 'Cosmic Tunnel' },
+  ];
+
+  const FX_MODES = [
+    { id: 0, label: 'Off' },
+    { id: 1, label: 'Cyber Laser Grid' },
+    { id: 2, label: 'Chromatic Glitch' },
+    { id: 3, label: 'Particle Dust' },
   ];
 
   const KALEIDOSCOPE_FOLDS = [
@@ -117,6 +131,7 @@ export const Controls: React.FC<ControlsProps> = ({
     { folds: 6, label: '6-Fold' },
     { folds: 8, label: '8-Fold' },
     { folds: 12, label: '12-Fold' },
+    { folds: 16, label: '16-Fold' },
   ];
 
   const kickIntensity = audioMetrics?.kickIntensity || 0;
@@ -141,7 +156,7 @@ export const Controls: React.FC<ControlsProps> = ({
           <div className="flex items-center justify-between pb-3 border-b border-white/10">
             <div>
               <h2 className="text-sm font-mono font-bold tracking-widest uppercase text-white/90">3D GEOMETRIC ENGINE</h2>
-              <span className="text-[10px] font-mono text-lime-400">Recording & Capture Enabled</span>
+              <span className="text-[10px] font-mono text-lime-400">8 Sacred Objects & FX Overlay Engine</span>
             </div>
             <button
               onClick={randomize}
@@ -168,7 +183,6 @@ export const Controls: React.FC<ControlsProps> = ({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              {/* Record / Stop Button */}
               {!isRecording ? (
                 <button
                   onClick={startRecording}
@@ -187,7 +201,6 @@ export const Controls: React.FC<ControlsProps> = ({
                 </button>
               )}
 
-              {/* PNG Snapshot Button */}
               <button
                 onClick={takeSnapshot}
                 className="py-2.5 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-white font-mono text-xs font-bold tracking-wider transition-all flex items-center justify-center gap-1.5"
@@ -197,7 +210,6 @@ export const Controls: React.FC<ControlsProps> = ({
               </button>
             </div>
 
-            {/* Export Session JSON Button */}
             {hasSessionKeyframes && (
               <button
                 onClick={exportSessionJson}
@@ -333,87 +345,49 @@ export const Controls: React.FC<ControlsProps> = ({
                 </div>
               </div>
             )}
-
-            {/* File Upload Trigger */}
-            {audioMode === 'file' && (
-              <div>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  accept="audio/*"
-                  className="hidden"
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-1.5 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-mono tracking-wider text-white transition-all flex items-center justify-center gap-2"
-                >
-                  <Upload size={13} />
-                  <span>Upload Audio File</span>
-                </button>
-              </div>
-            )}
-
-            {/* Seek Bar (File Mode) */}
-            {audioMode === 'file' && duration > 0 && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] font-mono text-white/50">
-                  <span>{formatTime(currentTime)}</span>
-                  <span>{formatTime(duration)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max={duration}
-                  step="0.1"
-                  value={currentTime}
-                  onChange={(e) => seek(parseFloat(e.target.value))}
-                  className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-lime-400"
-                />
-              </div>
-            )}
-
-            {/* Volume Slider */}
-            {audioMode !== 'mic' && (
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  onClick={() => setVolume(volume === 0 ? 0.8 : 0)}
-                  className="text-white/60 hover:text-white"
-                >
-                  {volume === 0 ? <VolumeX size={13} /> : <Volume2 size={13} />}
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={volume}
-                  onChange={(e) => setVolume(parseFloat(e.target.value))}
-                  className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-lime-400"
-                />
-                <span className="text-[10px] font-mono text-white/50 w-8 text-right">{Math.round(volume * 100)}%</span>
-              </div>
-            )}
           </div>
 
-          {/* 3D Geometry Mode Selector */}
+          {/* 8 3D GEOMETRY OBJECTS SELECTOR */}
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest text-white/60">
               <Box size={13} className="text-lime-400" />
-              <span>3D Geometry Engine Mode</span>
+              <span>3D Sacred Geometry & Mandala Mode</span>
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               {GEOMETRY_MODES.map((mode) => (
                 <button
                   key={mode.id}
                   onClick={() => setGeometryMode(mode.id)}
-                  className={`py-2 px-2 text-xs font-mono rounded-lg transition-all text-center ${
+                  className={`py-2 px-2 text-[11px] font-mono rounded-lg transition-all text-center leading-snug ${
                     geometryMode === mode.id
-                      ? 'bg-white text-black font-bold shadow-sm'
+                      ? 'bg-lime-400 text-black font-bold shadow-md'
                       : 'bg-white/5 text-white/70 hover:bg-white/10 border border-white/5'
                   }`}
                 >
                   {mode.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* VISUAL FX OVERLAY SELECTOR */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest text-white/60">
+              <Wand2 size={13} className="text-lime-400" />
+              <span>Visual FX Layer Overlay</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {FX_MODES.map((fx) => (
+                <button
+                  key={fx.id}
+                  onClick={() => setFxMode(fx.id)}
+                  className={`py-2 px-2 text-[11px] font-mono rounded-lg transition-all text-center ${
+                    fxMode === fx.id
+                      ? 'bg-sky-400 text-black font-bold shadow-md'
+                      : 'bg-white/5 text-white/70 hover:bg-white/10 border border-white/5'
+                  }`}
+                >
+                  {fx.label}
                 </button>
               ))}
             </div>
@@ -425,14 +399,14 @@ export const Controls: React.FC<ControlsProps> = ({
               <Compass size={13} className="text-lime-400" />
               <span>Polar Kaleidoscope Symmetry</span>
             </div>
-            <div className="grid grid-cols-5 gap-1">
+            <div className="grid grid-cols-6 gap-1">
               {KALEIDOSCOPE_FOLDS.map((f) => (
                 <button
                   key={f.folds}
                   onClick={() => setKaleidoscopeFolds(f.folds)}
-                  className={`py-1.5 text-[11px] font-mono rounded-md transition-all text-center ${
+                  className={`py-1.5 text-[10px] font-mono rounded-md transition-all text-center ${
                     kaleidoscopeFolds === f.folds
-                      ? 'bg-lime-400 text-black font-bold'
+                      ? 'bg-purple-400 text-black font-bold'
                       : 'bg-white/5 text-white/70 hover:bg-white/10'
                   }`}
                 >

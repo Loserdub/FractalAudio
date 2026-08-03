@@ -1,6 +1,7 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Visualizer, AudioMetrics } from './components/Visualizer';
 import { Controls } from './components/Controls';
+import { BottomBar } from './components/BottomBar';
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer';
 import { useMediaRecorder } from './hooks/useMediaRecorder';
 
@@ -10,6 +11,7 @@ export default function App() {
   const {
     audioMode,
     switchMode,
+    isListening,
     isPlaying,
     currentTime,
     duration,
@@ -46,6 +48,7 @@ export default function App() {
 
   // 3D Raymarching & Geometry States
   const [geometryMode, setGeometryModeState] = useState(1); // Default: 3D Mandelbulb
+  const [fxMode, setFxModeState] = useState(1); // Default: Cyber Laser Grid
   const [kaleidoscopeFolds, setKaleidoscopeFoldsState] = useState(6); // Default: 6-fold
   const [rotSpeed, setRotSpeedState] = useState(1.0);
   const [glowIntensity, setGlowIntensityState] = useState(1.5);
@@ -81,6 +84,11 @@ export default function App() {
     recordKeyframe({ geometryMode: v });
   }, [recordKeyframe]);
 
+  const setFxMode = useCallback((v: number) => {
+    setFxModeState(v);
+    recordKeyframe({ fxMode: v });
+  }, [recordKeyframe]);
+
   const setKaleidoscopeFolds = useCallback((v: number) => {
     setKaleidoscopeFoldsState(v);
     recordKeyframe({ kaleidoscopeFolds: v });
@@ -106,6 +114,7 @@ export default function App() {
   const startRecording = useCallback(() => {
     startMediaRecording({
       geometryMode,
+      fxMode,
       kaleidoscopeFolds,
       zoom,
       rotSpeed,
@@ -113,20 +122,22 @@ export default function App() {
       colorBase,
       juliaC
     });
-  }, [startMediaRecording, geometryMode, kaleidoscopeFolds, zoom, rotSpeed, glowIntensity, colorBase, juliaC]);
+  }, [startMediaRecording, geometryMode, fxMode, kaleidoscopeFolds, zoom, rotSpeed, glowIntensity, colorBase, juliaC]);
 
   const randomize = () => {
     const newJulia = { x: (Math.random() * 4 - 2), y: (Math.random() * 4 - 2) };
     const newColor = { h: Math.random(), s: 0.6 + Math.random() * 0.4, l: 0.4 + Math.random() * 0.4 };
     const newZoom = 0.6 + Math.random() * 1.8;
-    const newMode = Math.floor(Math.random() * 4);
-    const foldsOptions = [0, 4, 6, 8, 12];
+    const newMode = Math.floor(Math.random() * 8);
+    const newFx = Math.floor(Math.random() * 4);
+    const foldsOptions = [0, 4, 6, 8, 12, 16];
     const newFolds = foldsOptions[Math.floor(Math.random() * foldsOptions.length)];
 
     setJuliaCState(newJulia);
     setColorBaseState(newColor);
     setZoomState(newZoom);
     setGeometryModeState(newMode);
+    setFxModeState(newFx);
     setKaleidoscopeFoldsState(newFolds);
 
     recordKeyframe({
@@ -134,6 +145,7 @@ export default function App() {
       colorBase: newColor,
       zoom: newZoom,
       geometryMode: newMode,
+      fxMode: newFx,
       kaleidoscopeFolds: newFolds
     });
   };
@@ -151,6 +163,7 @@ export default function App() {
         juliaC={juliaC}
         sensitivity={sensitivity}
         geometryMode={geometryMode}
+        fxMode={fxMode}
         kaleidoscopeFolds={kaleidoscopeFolds}
         rotSpeed={rotSpeed}
         glowIntensity={glowIntensity}
@@ -162,18 +175,22 @@ export default function App() {
           href="https://trustnodelogic.com" 
           target="_blank" 
           rel="noopener noreferrer"
-          className="block hover:opacity-100 transition-opacity cursor-pointer"
+          title="Trust Node Logic — https://trustnodelogic.com"
+          className="group flex items-center gap-3 hover:opacity-100 transition-opacity cursor-pointer"
         >
-          <h1 className="text-4xl font-light tracking-tighter opacity-80 hover:opacity-100 transition-opacity flex items-center gap-3">
-            <span>Fractal<span className="font-bold">Audio</span></span>
-            {isRecording && (
-              <span className="w-3 h-3 rounded-full bg-red-500 animate-ping inline-block" />
-            )}
-          </h1>
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="lucide lucide-disc animate-spin-slow text-lime-400 group-hover:text-white transition-colors flex-shrink-0"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+          <div>
+            <h1 className="text-3xl font-light tracking-tighter opacity-90 group-hover:opacity-100 transition-opacity flex items-center gap-2.5">
+              <span>Fractal<span className="font-bold">Audio</span></span>
+              {isRecording && (
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping inline-block" />
+              )}
+            </h1>
+            <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-lime-400/80 group-hover:text-lime-400 transition-colors pointer-events-none mt-0.5">
+              TRUSTNODELOGIC · 3D ENGINE
+            </p>
+          </div>
         </a>
-        <p className="text-xs font-mono uppercase tracking-[0.2em] opacity-50 mt-1 pointer-events-none">
-          3D Engine · Recording Suite
-        </p>
       </div>
 
       <Controls
@@ -200,6 +217,8 @@ export default function App() {
         setSensitivity={setSensitivity}
         geometryMode={geometryMode}
         setGeometryMode={setGeometryMode}
+        fxMode={fxMode}
+        setFxMode={setFxMode}
         kaleidoscopeFolds={kaleidoscopeFolds}
         setKaleidoscopeFolds={setKaleidoscopeFolds}
         rotSpeed={rotSpeed}
@@ -216,6 +235,22 @@ export default function App() {
         stopRecording={stopRecording}
         takeSnapshot={takeSnapshot}
         exportSessionJson={exportSessionJson}
+      />
+
+      {/* Floating Lower-Center Quick Action Dock */}
+      <BottomBar
+        audioMode={audioMode}
+        switchMode={switchMode}
+        isListening={isListening}
+        isPlaying={isPlaying}
+        togglePlayPause={togglePlayPause}
+        loadAudioFile={loadAudioFile}
+        fileName={fileName}
+        isRecording={isRecording}
+        recordingSeconds={recordingSeconds}
+        startRecording={startRecording}
+        stopRecording={stopRecording}
+        takeSnapshot={takeSnapshot}
       />
     </div>
   );
