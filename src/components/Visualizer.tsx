@@ -180,7 +180,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         let subSum = 0, kickSum = 0, lowMidSum = 0, snareSum = 0, presSum = 0, trebSum = 0, airSum = 0;
 
         for (let i = 1; i < 930; i++) {
-          const val = Math.pow(dataArray[i] / 255.0, 1.4);
+          const val = Math.pow(dataArray[i] / 255.0, 1.35); // Enhanced non-linear dynamic range
 
           if (i <= 3) subSum += val;
           else if (i <= 7) kickSum += val;
@@ -191,13 +191,15 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
           else if (i <= 930) airSum += val;
         }
 
-        subVal = (subSum / 3) * currentProps.sensitivity;
-        kickVal = (kickSum / 4) * currentProps.sensitivity;
-        lowMidVal = (lowMidSum / 16) * currentProps.sensitivity;
-        snareVal = (snareSum / 70) * currentProps.sensitivity;
-        presVal = (presSum / 139) * currentProps.sensitivity;
-        trebVal = (trebSum / 233) * currentProps.sensitivity;
-        airVal = (airSum / 465) * currentProps.sensitivity;
+        // Apply 1.6x baseline gain boost
+        const gain = currentProps.sensitivity * 1.6;
+        subVal = (subSum / 3) * gain;
+        kickVal = (kickSum / 4) * gain;
+        lowMidVal = (lowMidSum / 16) * gain;
+        snareVal = (snareSum / 70) * gain;
+        presVal = (presSum / 139) * gain;
+        trebVal = (trebSum / 233) * gain;
+        airVal = (airSum / 465) * gain;
 
         const avgSub = historySub.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
         const avgSnare = historySnare.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
@@ -206,13 +208,13 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         historySnare[historyIdx] = snareSum;
         historyIdx = (historyIdx + 1) % HISTORY_SIZE;
 
-        if ((subVal + kickVal) > Math.max(0.15, avgSub * 1.45) && (nowMs - lastKickTime > 180)) {
+        if ((subVal + kickVal) > Math.max(0.12, avgSub * 1.35) && (nowMs - lastKickTime > 160)) {
           isKickBeat = true;
           kickTrigger = 1.0;
           lastKickTime = nowMs;
         }
 
-        if ((snareVal + presVal) > Math.max(0.12, avgSnare * 1.55) && (nowMs - lastSnareTime > 140)) {
+        if ((snareVal + presVal) > Math.max(0.10, avgSnare * 1.40) && (nowMs - lastSnareTime > 120)) {
           isSnareBeat = true;
           snareTrigger = 1.0;
           lastSnareTime = nowMs;
@@ -226,11 +228,11 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       const targetMid = (lowMidVal * 0.4 + snareVal * 0.6);
       const targetHigh = (presVal * 0.3 + trebVal * 0.4 + airVal * 0.3);
 
-      smoothedLow += (targetLow - smoothedLow) * 0.2;
-      smoothedMid += (targetMid - smoothedMid) * 0.2;
-      smoothedHigh += (targetHigh - smoothedHigh) * 0.2;
-      smoothedSub += (subVal - smoothedSub) * 0.2;
-      smoothedSnare += (snareVal - smoothedSnare) * 0.2;
+      smoothedLow += (targetLow - smoothedLow) * 0.25;
+      smoothedMid += (targetMid - smoothedMid) * 0.25;
+      smoothedHigh += (targetHigh - smoothedHigh) * 0.25;
+      smoothedSub += (subVal - smoothedSub) * 0.25;
+      smoothedSnare += (snareVal - smoothedSnare) * 0.25;
 
       if (currentProps.onAudioMetricsUpdate) {
         currentProps.onAudioMetricsUpdate({

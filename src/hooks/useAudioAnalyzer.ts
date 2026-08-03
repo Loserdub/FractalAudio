@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-export type AudioMode = 'mic' | 'file' | 'demo';
+export type AudioMode = 'mic' | 'file' | 'demo' | 'none';
 
 export const useAudioAnalyzer = () => {
-  const [audioMode, setAudioMode] = useState<AudioMode>('demo');
+  const [audioMode, setAudioMode] = useState<AudioMode>('none');
   const [isListening, setIsListening] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(0.8);
-  const [fileName, setFileName] = useState<string>('Generative Synth Loop (Demo)');
+  const [fileName, setFileName] = useState<string>('Select Audio Input Source');
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -167,6 +167,7 @@ export const useAudioAnalyzer = () => {
 
       setIsListening(true);
       setIsPlaying(true);
+      setAudioMode('mic');
       setFileName('Microphone Input (Live)');
     } catch (err) {
       console.error('Error accessing microphone:', err);
@@ -277,7 +278,7 @@ export const useAudioAnalyzer = () => {
   }, []);
 
   useEffect(() => {
-    startDemoSynth();
+    // Initialized without auto-playing demo track
     return () => {
       stopAllSources();
       if (objectUrlRef.current) {

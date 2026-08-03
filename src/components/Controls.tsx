@@ -111,7 +111,7 @@ export const Controls: React.FC<ControlsProps> = ({
     { id: 0, label: 'Classic 2D Liquid' },
     { id: 1, label: '3D Mandelbulb' },
     { id: 2, label: '3D Julia' },
-    { id: 3, label: '3D Polyhedron' },
+    { id: 3, label: '3D Ink Flow' },
     { id: 4, label: 'Sri Yantra Mandala' },
     { id: 5, label: "Metatron's Cube" },
     { id: 6, label: '3D Torus Knot' },
@@ -157,7 +157,7 @@ export const Controls: React.FC<ControlsProps> = ({
           <div className="flex items-center justify-between pb-3 border-b border-white/10">
             <div>
               <h2 className="text-sm font-mono font-bold tracking-widest uppercase text-white/90">VISUALIZER ENGINE</h2>
-              <span className="text-[10px] font-mono text-lime-400">Classic 2D Liquid & 3D SDF Objects</span>
+              <span className="text-[10px] font-mono text-lime-400">3D Ink Flow & Sacred Geometry</span>
             </div>
             <button
               onClick={randomize}

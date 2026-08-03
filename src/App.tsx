@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import { Visualizer, AudioMetrics } from './components/Visualizer';
 import { Controls } from './components/Controls';
 import { BottomBar } from './components/BottomBar';
+import { OnboardingModal } from './components/OnboardingModal';
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer';
 import { useMediaRecorder } from './hooks/useMediaRecorder';
 
@@ -44,10 +45,10 @@ export default function App() {
   const [iterations, setIterationsState] = useState(64);
   const [colorBase, setColorBaseState] = useState({ h: 0.45, s: 0.8, l: 0.5 });
   const [juliaC, setJuliaCState] = useState({ x: -0.8, y: 0.156 });
-  const [sensitivity, setSensitivityState] = useState(3.0);
+  const [sensitivity, setSensitivityState] = useState(4.5); // High baseline sensitivity
 
   // 3D Raymarching & Geometry States
-  const [geometryMode, setGeometryModeState] = useState(1); // Default: 3D Mandelbulb
+  const [geometryMode, setGeometryModeState] = useState(3); // Default: 3D Ink Flow
   const [fxMode, setFxModeState] = useState(1); // Default: Cyber Laser Grid
   const [kaleidoscopeFolds, setKaleidoscopeFoldsState] = useState(6); // Default: 6-fold
   const [rotSpeed, setRotSpeedState] = useState(1.0);
@@ -128,7 +129,7 @@ export default function App() {
     const newJulia = { x: (Math.random() * 4 - 2), y: (Math.random() * 4 - 2) };
     const newColor = { h: Math.random(), s: 0.6 + Math.random() * 0.4, l: 0.4 + Math.random() * 0.4 };
     const newZoom = 0.6 + Math.random() * 1.8;
-    const newMode = Math.floor(Math.random() * 8);
+    const newMode = Math.floor(Math.random() * 9);
     const newFx = Math.floor(Math.random() * 4);
     const foldsOptions = [0, 4, 6, 8, 12, 16];
     const newFolds = foldsOptions[Math.floor(Math.random() * foldsOptions.length)];
@@ -170,6 +171,7 @@ export default function App() {
         onAudioMetricsUpdate={handleAudioMetricsUpdate}
       />
       
+      {/* Top Header Logo */}
       <div className="absolute top-6 left-8 mix-blend-difference z-10">
         <a 
           href="https://trustnodelogic.com" 
@@ -187,7 +189,7 @@ export default function App() {
               )}
             </h1>
             <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-lime-400/80 group-hover:text-lime-400 transition-colors pointer-events-none mt-0.5">
-              TRUSTNODELOGIC · 3D ENGINE
+              TRUSTNODELOGIC · 3D INK ENGINE
             </p>
           </div>
         </a>
@@ -252,6 +254,15 @@ export default function App() {
         stopRecording={stopRecording}
         takeSnapshot={takeSnapshot}
       />
+
+      {/* First Visit Onboarding Modal */}
+      {audioMode === 'none' && (
+        <OnboardingModal
+          onSelectMic={() => switchMode('mic')}
+          onSelectFile={(file) => loadAudioFile(file)}
+          onSelectDemo={() => switchMode('demo')}
+        />
+      )}
     </div>
   );
 }

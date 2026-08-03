@@ -26,7 +26,7 @@ uniform float u_beat_kick;   // Transient Kick Beat (0.0 - 1.0)
 uniform float u_beat_snare;  // Transient Snare / Plosive Beat (0.0 - 1.0)
 
 // Geometry & FX Uniforms
-uniform int u_geometry_mode;        // 0: Classic 2D Liquid, 1: 3D Mandelbulb, 2: 3D Julia, 3: 3D Polyhedron, 4: Sri Yantra, 5: Metatron, 6: Torus Knot, 7: Pyramid, 8: Tunnel
+uniform int u_geometry_mode;        // 0: Classic 2D Liquid, 1: 3D Mandelbulb, 2: 3D Julia, 3: 3D Ink Flow, 4: Sri Yantra, 5: Metatron, 6: Torus Knot, 7: Pyramid, 8: Tunnel
 uniform int u_fx_mode;              // 0: None, 1: Cyber Grid, 2: Chromatic Glitch, 3: Particle Dust
 uniform float u_kaleidoscope_folds; // 0, 4, 6, 8, 12, 16
 uniform float u_rot_speed;
@@ -69,15 +69,15 @@ vec2 applyKaleidoscope(vec2 p, float folds) {
 // CLASSIC 2D LIQUID JULIA FRACTAL RENDERER
 // ----------------------------------------------------
 vec4 renderLiquidJulia2D(vec2 uv) {
-    float angle = u_audio_mid * 0.2 + u_beat_snare * 0.3;
+    float angle = u_audio_mid * 0.3 + u_beat_snare * 0.4;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
     
-    float dynamicZoom = u_zoom * (1.0 - u_audio_low * 0.15 - u_beat_kick * 0.2);
+    float dynamicZoom = u_zoom * (1.0 - u_audio_low * 0.2 - u_beat_kick * 0.25);
     vec2 p = rot * uv * dynamicZoom + u_offset;
     
     vec2 c = u_c + vec2(
-        sin(u_time * 0.5 + u_audio_sub) * 0.03 * u_audio_low + u_beat_kick * 0.04, 
-        cos(u_time * 0.3 - u_audio_high) * 0.03 * u_audio_mid + u_beat_snare * 0.04
+        sin(u_time * 0.5 + u_audio_sub) * 0.05 * u_audio_low + u_beat_kick * 0.06, 
+        cos(u_time * 0.3 - u_audio_high) * 0.05 * u_audio_mid + u_beat_snare * 0.06
     );
     
     vec2 z = p;
@@ -114,7 +114,6 @@ vec4 renderLiquidJulia2D(vec2 uv) {
         color = vec3(corePulse * u_color_base.x, corePulse * 0.5, corePulse);
     }
 
-    // Apply Glitch & Laser Overlay on 2D Liquid mode
     if (u_fx_mode == 2 || u_beat_snare > 0.6) {
         color.r += u_beat_snare * 0.3;
         color.b += u_beat_kick * 0.2;
@@ -131,9 +130,9 @@ vec4 renderLiquidJulia2D(vec2 uv) {
 float mapJulia3D(vec3 p, out float trap) {
     vec4 z = vec4(p, 0.0);
     vec4 c = vec4(
-        u_c.x + sin(u_time * 0.3) * 0.05 * u_audio_mid + u_beat_snare * 0.08, 
+        u_c.x + sin(u_time * 0.3) * 0.08 * u_audio_mid + u_beat_snare * 0.12, 
         u_c.y, 
-        sin(u_audio_low) + u_beat_kick * 0.15, 
+        sin(u_audio_low) + u_beat_kick * 0.2, 
         cos(u_audio_high) * 0.2
     );
     float dr2 = 1.0;
@@ -164,7 +163,7 @@ float mapMandelbulb(vec3 p, out float trap) {
     float r = 0.0;
     trap = 1.0;
     
-    float power = 8.0 + u_audio_sub * 4.0 + u_beat_kick * 7.0;
+    float power = 8.0 + u_audio_sub * 5.0 + u_beat_kick * 8.0;
 
     for (int i = 0; i < 8; i++) {
         r = length(w);
@@ -177,8 +176,8 @@ float mapMandelbulb(vec3 p, out float trap) {
         dr = pow(r, power - 1.0) * power * dr + 1.0;
 
         float zr = pow(r, power);
-        theta = theta * power + u_time * 0.2 + u_audio_mid * 0.5 + u_beat_snare * 0.4;
-        phi = phi * power + u_audio_high * 0.5;
+        theta = theta * power + u_time * 0.2 + u_audio_mid * 0.6 + u_beat_snare * 0.5;
+        phi = phi * power + u_audio_high * 0.6;
 
         w = zr * vec3(sin(theta) * cos(phi), sin(phi) * sin(theta), cos(theta));
         w += p;
@@ -186,16 +185,21 @@ float mapMandelbulb(vec3 p, out float trap) {
     return 0.5 * log(r) * r / dr;
 }
 
-// 3D Wireframe Octahedron / Polyhedron SDF (FIXED: Rescaled to 0.45 for perfect camera framing)
-float mapPolyhedron(vec3 p, out float trap) {
-    vec3 q = abs(p) - vec3(0.45 + u_audio_sub * 0.15 + u_beat_kick * 0.1);
-    float box = length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+// NEW: 3D Organic Ink Flow / Fluid Dispersion SDF (Replaces old Polyhedron)
+float mapInkFlow(vec3 p, out float trap) {
+    vec3 q = p;
+    // Fluid Domain Warping
+    float warp = sin(q.x * 2.5 + u_time * 0.8) * cos(q.y * 2.5 - u_audio_sub * 2.5) * sin(q.z * 2.5 + u_beat_kick * 3.5);
+    q += vec3(warp * 0.45);
+
+    // Core Fluid Ink Blob
+    float dCore = length(q) - (0.65 + u_audio_sub * 0.4 + u_beat_kick * 0.45);
     
-    float thickness = 0.02 + u_audio_snare * 0.02 + u_beat_snare * 0.03;
-    float frame = length(vec2(length(p.xy) - 0.45, p.z)) - thickness;
+    // Tendril Fluid Waves
+    float dTendrils = sin(q.x * 4.5 + u_time * 1.5) * cos(q.y * 4.5 + u_audio_mid) * sin(q.z * 4.5 + u_audio_high) * 0.18;
     
-    trap = length(p);
-    return max(box, -frame);
+    trap = length(q);
+    return (dCore + dTendrils) * 0.65;
 }
 
 // Sacred Sri Yantra Mandala SDF
@@ -203,12 +207,12 @@ float mapSriYantra(vec3 p, out float trap) {
     float r = length(p.xy);
     float a = atan(p.y, p.x);
     
-    float ring1 = abs(r - (1.2 + sin(u_time * 0.5 + u_audio_sub) * 0.2)) - 0.05;
+    float ring1 = abs(r - (1.2 + sin(u_time * 0.5 + u_audio_sub) * 0.3 + u_beat_kick * 0.4)) - 0.05;
     float ring2 = abs(r - 0.8) - 0.03;
     float ring3 = abs(r - 0.4) - 0.02;
     
-    vec3 q = rotateZ(floor(a * 4.5 + u_audio_mid * 2.0) / 4.5) * p;
-    float tri = max(abs(q.x) * 0.866 + q.y * 0.5, -q.y) - (0.7 + u_beat_kick * 0.3);
+    vec3 q = rotateZ(floor(a * 4.5 + u_audio_mid * 2.5) / 4.5) * p;
+    float tri = max(abs(q.x) * 0.866 + q.y * 0.5, -q.y) - (0.7 + u_beat_kick * 0.4);
     
     trap = r;
     return max(min(ring1, min(ring2, ring3)), abs(p.z) - 0.15);
@@ -216,13 +220,13 @@ float mapSriYantra(vec3 p, out float trap) {
 
 // Metatron's Cube & Flower of Life SDF
 float mapMetatronCube(vec3 p, out float trap) {
-    vec3 pScaled = p * (1.2 + u_beat_kick * 0.3);
-    float centerSphere = length(pScaled) - 0.4;
+    vec3 pScaled = p * (1.2 + u_beat_kick * 0.4);
+    float centerSphere = length(pScaled) - (0.4 + u_audio_sub * 0.2);
     
     vec3 absP = abs(pScaled);
-    float outerSpheres = length(absP - vec3(0.8, 0.8, 0.8)) - 0.25;
+    float outerSpheres = length(absP - vec3(0.8, 0.8, 0.8)) - (0.25 + u_beat_snare * 0.15);
     
-    float beam = length(vec2(length(p.xy) - 0.8, p.z)) - (0.03 + u_audio_snare * 0.04);
+    float beam = length(vec2(length(p.xy) - 0.8, p.z)) - (0.03 + u_audio_snare * 0.06);
     
     trap = length(p);
     return min(min(centerSphere, outerSpheres), beam);
@@ -230,15 +234,15 @@ float mapMetatronCube(vec3 p, out float trap) {
 
 // 3D Trefoil Torus Knot SDF
 float mapTorusKnot(vec3 p, out float trap) {
-    vec3 q = rotateZ(u_time * 0.4 + u_audio_mid) * p;
+    vec3 q = rotateZ(u_time * 0.4 + u_audio_mid * 1.5) * p;
     float r = length(q.xy);
     float a = atan(q.y, q.x);
     
-    vec2 cl = vec2(r - (1.2 + u_beat_kick * 0.3), q.z);
+    vec2 cl = vec2(r - (1.2 + u_beat_kick * 0.4), q.z);
     float angleKnot = a * 1.5;
-    vec2 knotP = vec2(sin(angleKnot), cos(angleKnot)) * 0.3;
+    vec2 knotP = vec2(sin(angleKnot), cos(angleKnot)) * 0.35;
     
-    float knotD = length(cl - knotP) - (0.12 + u_audio_snare * 0.08);
+    float knotD = length(cl - knotP) - (0.12 + u_audio_snare * 0.1);
     trap = r;
     return knotD;
 }
@@ -250,9 +254,9 @@ float mapPrismPyramid(vec3 p, out float trap) {
     
     float pyr = max(abs(q.x) + q.y, max(abs(q.z) + q.y, -q.y - 1.2));
     
-    vec3 crystalP = p - vec3(0.0, 1.2 + sin(u_time * 2.0 + u_audio_sub) * 0.2 + u_beat_kick * 0.3, 0.0);
-    crystalP = rotateY(u_time * 2.0) * crystalP;
-    float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) - (0.35 + u_audio_high * 0.2);
+    vec3 crystalP = p - vec3(0.0, 1.2 + sin(u_time * 2.0 + u_audio_sub) * 0.3 + u_beat_kick * 0.4, 0.0);
+    crystalP = rotateY(u_time * 2.5 + u_audio_mid) * crystalP;
+    float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) - (0.35 + u_audio_high * 0.3);
     
     trap = length(crystalP);
     return min(pyr, crystal);
@@ -261,8 +265,8 @@ float mapPrismPyramid(vec3 p, out float trap) {
 // Infinite Cosmic Tunnel SDF
 float mapCosmicTunnel(vec3 p, out float trap) {
     float r = length(p.xy);
-    float tunnel = abs(r - (1.8 + u_beat_kick * 0.4)) - 0.1;
-    float rib = abs(sin(p.z * 3.0 + u_time * 4.0 * u_rot_speed + u_audio_sub * 4.0)) - (0.1 + u_audio_snare * 0.1);
+    float tunnel = abs(r - (1.8 + u_beat_kick * 0.5)) - 0.1;
+    float rib = abs(sin(p.z * 3.0 + u_time * 4.0 * u_rot_speed + u_audio_sub * 5.0)) - (0.1 + u_audio_snare * 0.15);
     
     trap = r;
     return max(tunnel, rib);
@@ -272,7 +276,7 @@ float mapCosmicTunnel(vec3 p, out float trap) {
 float mapScene(vec3 p, out float trap) {
     if (u_geometry_mode == 1) return mapMandelbulb(p, trap);
     if (u_geometry_mode == 2) return mapJulia3D(p, trap);
-    if (u_geometry_mode == 3) return mapPolyhedron(p, trap);
+    if (u_geometry_mode == 3) return mapInkFlow(p, trap); // NEW 3D ORGANIC INK FLOW
     if (u_geometry_mode == 4) return mapSriYantra(p, trap);
     if (u_geometry_mode == 5) return mapMetatronCube(p, trap);
     if (u_geometry_mode == 6) return mapTorusKnot(p, trap);
@@ -298,7 +302,6 @@ vec3 calcNormal(vec3 p) {
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
 
-    // IF MODE == 0: RENDER CLASSIC 2D LIQUID JULIA FRACTAL
     if (u_geometry_mode == 0) {
         if (u_kaleidoscope_folds > 0.0) {
             uv = applyKaleidoscope(uv, u_kaleidoscope_folds);
@@ -307,17 +310,14 @@ void main() {
         return;
     }
     
-    // Apply Chromatic Glitch FX Shift if active
     if (u_fx_mode == 2 || (u_beat_snare > 0.6 && u_fx_mode > 0)) {
         uv.x += sin(uv.y * 50.0 + u_time * 20.0) * 0.015 * u_beat_snare;
     }
 
-    // Apply Polar Kaleidoscope Symmetry Fold
     uv = applyKaleidoscope(uv, u_kaleidoscope_folds);
 
-    // Audio-reactive Camera Setup + Kick Beat Punch
-    float camDist = 2.5 * u_zoom * (1.0 - u_audio_sub * 0.12 - u_beat_kick * 0.22);
-    float rotY = u_time * 0.2 * u_rot_speed + u_offset.x * 3.0 + u_audio_mid * 0.4;
+    float camDist = 2.5 * u_zoom * (1.0 - u_audio_sub * 0.15 - u_beat_kick * 0.25);
+    float rotY = u_time * 0.2 * u_rot_speed + u_offset.x * 3.0 + u_audio_mid * 0.5;
     float rotX = u_offset.y * 3.0 + sin(u_time * 0.15) * 0.3;
 
     vec3 ro = vec3(0.0, 0.0, -camDist);
@@ -326,7 +326,6 @@ void main() {
 
     vec3 rd = rotM * normalize(vec3(uv, 1.5));
 
-    // Raymarching Loop
     float t = 0.0;
     float maxDist = 10.0;
     float trap = 0.0;
@@ -357,13 +356,13 @@ void main() {
         float diff = max(dot(normal, lightDir), 0.0);
         vec3 viewDir = normalize(ro - hitPos);
         vec3 halfDir = normalize(lightDir + viewDir);
-        float spec = pow(max(dot(normal, halfDir), 0.0), 32.0) * (1.0 + u_audio_high * 2.0 + u_beat_snare * 4.0);
+        float spec = pow(max(dot(normal, halfDir), 0.0), 32.0) * (1.0 + u_audio_high * 2.5 + u_beat_snare * 4.5);
         
-        float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0) * (1.0 + u_audio_high * 1.5 + u_beat_snare * 2.5);
+        float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0) * (1.0 + u_audio_high * 1.8 + u_beat_snare * 3.0);
         
-        float hue = u_color_base.x + trap * 0.8 + u_time * 0.05 + u_audio_high * 0.3 + u_beat_kick * 0.15;
-        float sat = clamp(u_color_base.y + u_audio_mid * 0.4 + u_beat_snare * 0.3, 0.0, 1.0);
-        float light = clamp(0.2 + diff * 0.5 + spec * 0.4 + u_audio_sub * 0.2 + u_beat_kick * 0.3, 0.0, 1.0);
+        float hue = u_color_base.x + trap * 0.8 + u_time * 0.05 + u_audio_high * 0.35 + u_beat_kick * 0.2;
+        float sat = clamp(u_color_base.y + u_audio_mid * 0.5 + u_beat_snare * 0.3, 0.0, 1.0);
+        float light = clamp(0.2 + diff * 0.5 + spec * 0.4 + u_audio_sub * 0.25 + u_beat_kick * 0.35, 0.0, 1.0);
 
         vec3 baseRGB = hsl2rgb(vec3(hue, sat, light));
         
@@ -372,11 +371,10 @@ void main() {
         float fog = exp(-t * 0.25);
         finalColor = mix(vec3(0.03, 0.04, 0.07), finalColor, fog);
     } else {
-        float bgGlow = (1.0 - length(uv)) * (0.15 + u_audio_sub * 0.25 + u_beat_kick * 0.4);
+        float bgGlow = (1.0 - length(uv)) * (0.15 + u_audio_sub * 0.3 + u_beat_kick * 0.45);
         finalColor = hsl2rgb(vec3(u_color_base.x + 0.5, 0.8, 0.1)) * bgGlow * u_glow_intensity;
     }
 
-    // VISUAL FX OVERLAYS
     if (u_fx_mode == 1) {
         float floorY = -1.6;
         if (rd.y < 0.0) {
