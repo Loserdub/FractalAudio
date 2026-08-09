@@ -180,7 +180,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         let subSum = 0, kickSum = 0, lowMidSum = 0, snareSum = 0, presSum = 0, trebSum = 0, airSum = 0;
 
         for (let i = 1; i < 930; i++) {
-          const val = Math.pow(dataArray[i] / 255.0, 1.2); // Smooth linear-logarithmic dynamic scale
+          const val = Math.pow(dataArray[i] / 255.0, 1.1); // Dynamic scaling preserving mid/high details
 
           // Frequency mapping (assuming ~44.1kHz / 2048 fft -> ~21.5Hz per bin):
           // Sub-Bass & Bass (20Hz - 250Hz): Bins 1..12
@@ -195,14 +195,14 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
           else if (i <= 930) airSum += val;
         }
 
-        const gain = currentProps.sensitivity * 1.2;
-        subVal = (subSum / 3) * gain;
-        kickVal = (kickSum / 9) * gain;
-        lowMidVal = (lowMidSum / 28) * gain;
-        snareVal = (snareSum / 146) * gain;
-        presVal = (presSum / 164) * gain;
-        trebVal = (trebSum / 300) * gain;
-        airVal = (airSum / 280) * gain;
+        const gain = currentProps.sensitivity * 1.35;
+        subVal = (subSum / 3.0) * gain;
+        kickVal = (kickSum / 9.0) * gain;
+        lowMidVal = (lowMidSum / 28.0) * gain;
+        snareVal = (snareSum / 146.0) * gain * 1.4;
+        presVal = (presSum / 164.0) * gain * 1.8;
+        trebVal = (trebSum / 300.0) * gain * 2.2;
+        airVal = (airSum / 280.0) * gain * 2.5;
 
         const avgSub = historySub.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
         const avgSnare = historySnare.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
@@ -211,36 +211,42 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         historySnare[historyIdx] = snareSum;
         historyIdx = (historyIdx + 1) % HISTORY_SIZE;
 
-        if ((subVal + kickVal) > Math.max(0.15, avgSub * 1.30) && (nowMs - lastKickTime > 180)) {
+        if ((subVal + kickVal) > Math.max(0.12, avgSub * 1.25) && (nowMs - lastKickTime > 150)) {
           isKickBeat = true;
           kickTrigger = 1.0;
           lastKickTime = nowMs;
         }
 
-        if ((snareVal + presVal) > Math.max(0.12, avgSnare * 1.35) && (nowMs - lastSnareTime > 140)) {
+        if ((snareVal + presVal) > Math.max(0.10, avgSnare * 1.28) && (nowMs - lastSnareTime > 120)) {
           isSnareBeat = true;
           snareTrigger = 1.0;
           lastSnareTime = nowMs;
         }
       }
 
-      // Smooth decay factor on beat triggers for glowing ember transitions
-      kickTrigger *= 0.90;
-      snareTrigger *= 0.90;
+      // Smooth exponential decay on beat triggers for glowing transient pops
+      kickTrigger *= 0.88;
+      snareTrigger *= 0.88;
 
-      // Apply smooth exponential scaling (Math.pow(bass, 2)) to Sub-Bass/Bass to avoid erratic jumping
+      // Linear & soft-knee target calculations preserving low/mid audio detail
       const rawBass = (subVal * 0.6 + kickVal * 0.4);
-      const targetLow = Math.min(1.0, Math.pow(rawBass, 2.0));
-      const targetMid = Math.min(1.0, (lowMidVal * 0.5 + snareVal * 0.5));
-      const targetHigh = Math.min(1.0, (presVal * 0.3 + trebVal * 0.4 + airVal * 0.3));
+      const targetLow = Math.min(1.2, rawBass * 1.2);
+      const targetMid = Math.min(1.2, (lowMidVal * 0.5 + snareVal * 0.5) * 1.2);
+      const targetHigh = Math.min(1.2, (presVal * 0.3 + trebVal * 0.4 + airVal * 0.3) * 1.3);
+      const targetSub = Math.min(1.2, subVal * 1.3);
+      const targetSnare = Math.min(1.2, snareVal * 1.3);
 
-      // Low-pass linear interpolation (lerp) for fluid, liquid-like reactivity
-      const lerpAlpha = 0.10;
-      smoothedLow += (targetLow - smoothedLow) * lerpAlpha;
-      smoothedMid += (targetMid - smoothedMid) * lerpAlpha;
-      smoothedHigh += (targetHigh - smoothedHigh) * lerpAlpha;
-      smoothedSub += (Math.min(1.0, Math.pow(subVal, 2.0)) - smoothedSub) * lerpAlpha;
-      smoothedSnare += (snareVal - smoothedSnare) * lerpAlpha;
+      // Asymmetric dual-speed lerp (Instant Attack on transients + Smooth Liquid Decay)
+      const dualLerp = (cur: number, target: number, attack = 0.40, decay = 0.08) => {
+        const alpha = target > cur ? attack : decay;
+        return cur + (target - cur) * alpha;
+      };
+
+      smoothedLow = dualLerp(smoothedLow, targetLow, 0.42, 0.08);
+      smoothedMid = dualLerp(smoothedMid, targetMid, 0.35, 0.08);
+      smoothedHigh = dualLerp(smoothedHigh, targetHigh, 0.35, 0.08);
+      smoothedSub = dualLerp(smoothedSub, targetSub, 0.45, 0.07);
+      smoothedSnare = dualLerp(smoothedSnare, targetSnare, 0.40, 0.08);
 
       if (currentProps.onAudioMetricsUpdate) {
         currentProps.onAudioMetricsUpdate({
