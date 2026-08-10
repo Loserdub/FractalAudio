@@ -113,7 +113,11 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_audio_mid: gl.getUniformLocation(program, 'u_audio_mid'),
       u_audio_high: gl.getUniformLocation(program, 'u_audio_high'),
       u_audio_sub: gl.getUniformLocation(program, 'u_audio_sub'),
+      u_audio_kick: gl.getUniformLocation(program, 'u_audio_kick'),
       u_audio_snare: gl.getUniformLocation(program, 'u_audio_snare'),
+      u_audio_pres: gl.getUniformLocation(program, 'u_audio_pres'),
+      u_audio_treb: gl.getUniformLocation(program, 'u_audio_treb'),
+      u_audio_air: gl.getUniformLocation(program, 'u_audio_air'),
       u_beat_kick: gl.getUniformLocation(program, 'u_beat_kick'),
       u_beat_snare: gl.getUniformLocation(program, 'u_beat_snare'),
       u_geometry_mode: gl.getUniformLocation(program, 'u_geometry_mode'),
@@ -137,7 +141,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
 
     let dataArray: Uint8Array | null = null;
     let smoothedLow = 0, smoothedMid = 0, smoothedHigh = 0;
-    let smoothedSub = 0, smoothedSnare = 0;
+    let smoothedSub = 0, smoothedKick = 0, smoothedSnare = 0, smoothedPres = 0, smoothedTreb = 0, smoothedAir = 0;
     
     let kickTrigger = 0;
     let snareTrigger = 0;
@@ -195,14 +199,14 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
           else if (i <= 930) airSum += val;
         }
 
-        const gain = currentProps.sensitivity * 1.35;
+        const gain = currentProps.sensitivity * 1.4;
         subVal = (subSum / 3.0) * gain;
         kickVal = (kickSum / 9.0) * gain;
         lowMidVal = (lowMidSum / 28.0) * gain;
-        snareVal = (snareSum / 146.0) * gain * 1.4;
-        presVal = (presSum / 164.0) * gain * 1.8;
-        trebVal = (trebSum / 300.0) * gain * 2.2;
-        airVal = (airSum / 280.0) * gain * 2.5;
+        snareVal = (snareSum / 146.0) * gain * 1.5;
+        presVal = (presSum / 164.0) * gain * 2.0;
+        trebVal = (trebSum / 300.0) * gain * 2.4;
+        airVal = (airSum / 280.0) * gain * 2.8;
 
         const currentSubEnergy = subVal + kickVal;
         const currentSnareEnergy = snareVal + presVal;
@@ -215,8 +219,8 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         historyIdx = (historyIdx + 1) % HISTORY_SIZE;
 
         // Dynamic adaptive beat detection using sliding average
-        const kickMinThreshold = Math.max(0.12, 0.40 / Math.max(0.5, currentProps.sensitivity));
-        const snareMinThreshold = Math.max(0.10, 0.35 / Math.max(0.5, currentProps.sensitivity));
+        const kickMinThreshold = Math.max(0.10, 0.35 / Math.max(0.5, currentProps.sensitivity));
+        const snareMinThreshold = Math.max(0.08, 0.30 / Math.max(0.5, currentProps.sensitivity));
 
         if (currentSubEnergy > Math.max(kickMinThreshold, avgSub * 1.15) && (nowMs - lastKickTime > 130)) {
           isKickBeat = true;
@@ -235,13 +239,14 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       kickTrigger *= 0.88;
       snareTrigger *= 0.88;
 
-      // Linear & soft-knee target calculations preserving low/mid audio detail
-      const rawBass = (subVal * 0.6 + kickVal * 0.4);
-      const targetLow = Math.min(1.2, rawBass * 1.2);
-      const targetMid = Math.min(1.2, (lowMidVal * 0.5 + snareVal * 0.5) * 1.2);
-      const targetHigh = Math.min(1.2, (presVal * 0.3 + trebVal * 0.4 + airVal * 0.3) * 1.3);
-      const targetSub = Math.min(1.2, subVal * 1.3);
-      const targetSnare = Math.min(1.2, snareVal * 1.3);
+      // Dynamic target calculations for all 7 frequency bands
+      const targetSub = Math.min(1.5, subVal * 1.4);
+      const targetKick = Math.min(1.5, kickVal * 1.4);
+      const targetMid = Math.min(1.5, lowMidVal * 1.4);
+      const targetSnare = Math.min(1.5, snareVal * 1.4);
+      const targetPres = Math.min(1.5, presVal * 1.5);
+      const targetTreb = Math.min(1.5, trebVal * 1.6);
+      const targetAir = Math.min(1.5, airVal * 1.8);
 
       // Asymmetric dual-speed lerp (Instant Attack on transients + Smooth Liquid Decay)
       const dualLerp = (cur: number, target: number, attack = 0.40, decay = 0.08) => {
@@ -249,21 +254,26 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         return cur + (target - cur) * alpha;
       };
 
-      smoothedLow = dualLerp(smoothedLow, targetLow, 0.42, 0.08);
-      smoothedMid = dualLerp(smoothedMid, targetMid, 0.35, 0.08);
-      smoothedHigh = dualLerp(smoothedHigh, targetHigh, 0.35, 0.08);
       smoothedSub = dualLerp(smoothedSub, targetSub, 0.45, 0.07);
+      smoothedKick = dualLerp(smoothedKick, targetKick, 0.42, 0.08);
+      smoothedMid = dualLerp(smoothedMid, targetMid, 0.38, 0.08);
       smoothedSnare = dualLerp(smoothedSnare, targetSnare, 0.40, 0.08);
+      smoothedPres = dualLerp(smoothedPres, targetPres, 0.35, 0.08);
+      smoothedTreb = dualLerp(smoothedTreb, targetTreb, 0.35, 0.08);
+      smoothedAir = dualLerp(smoothedAir, targetAir, 0.35, 0.08);
+
+      smoothedLow = (smoothedSub * 0.5 + smoothedKick * 0.5);
+      smoothedHigh = (smoothedPres * 0.3 + smoothedTreb * 0.4 + smoothedAir * 0.3);
 
       if (currentProps.onAudioMetricsUpdate) {
         currentProps.onAudioMetricsUpdate({
           sub: smoothedSub,
-          kick: kickVal,
-          lowMid: lowMidVal,
+          kick: smoothedKick,
+          lowMid: smoothedMid,
           snare: smoothedSnare,
-          presence: presVal,
-          treble: trebVal,
-          air: airVal,
+          presence: smoothedPres,
+          treble: smoothedTreb,
+          air: smoothedAir,
           isKickBeat,
           isSnareBeat,
           kickIntensity: kickTrigger,
@@ -281,8 +291,15 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       gl.uniform1f(locs.u_audio_low, smoothedLow);
       gl.uniform1f(locs.u_audio_mid, smoothedMid);
       gl.uniform1f(locs.u_audio_high, smoothedHigh);
+      
+      // Pass all 7 continuous metrics to WebGL shader
       gl.uniform1f(locs.u_audio_sub, smoothedSub);
+      gl.uniform1f(locs.u_audio_kick, smoothedKick);
       gl.uniform1f(locs.u_audio_snare, smoothedSnare);
+      gl.uniform1f(locs.u_audio_pres, smoothedPres);
+      gl.uniform1f(locs.u_audio_treb, smoothedTreb);
+      gl.uniform1f(locs.u_audio_air, smoothedAir);
+
       gl.uniform1f(locs.u_beat_kick, kickTrigger);
       gl.uniform1f(locs.u_beat_snare, snareTrigger);
 

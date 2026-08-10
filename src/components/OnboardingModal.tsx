@@ -87,8 +87,17 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           </button>
         </div>
 
-        <div className="pt-2 text-[10px] font-mono text-white/40 uppercase tracking-widest relative z-10">
-          POWERED BY TRUSTNODELOGIC · WEB AUDIO API
+        <div className="pt-2 text-[10px] font-mono text-white/40 uppercase tracking-widest relative z-10 flex items-center justify-center gap-1.5 flex-wrap">
+          <span>POWERED BY</span>
+          <a 
+            href="https://trustnodelogic.com" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="text-lime-400/80 hover:text-lime-400 underline transition-colors"
+          >
+            TRUST NODE LOGIC
+          </a>
+          <span>· JUSTIN RAY (JRAY)</span>
         </div>
 
       </div>
