@@ -45,7 +45,7 @@ export default function App() {
   const [iterations, setIterationsState] = useState(64);
   const [colorBase, setColorBaseState] = useState({ h: 0.45, s: 0.8, l: 0.5 });
   const [juliaC, setJuliaCState] = useState({ x: -0.8, y: 0.156 });
-  const [sensitivity, setSensitivityState] = useState(4.5); // High baseline sensitivity
+  const [sensitivity, setSensitivityState] = useState(1.8); // Balanced baseline sensitivity
 
   // 3D Raymarching & Geometry States
   const [geometryMode, setGeometryModeState] = useState(3); // Default: 3D Ink Flow

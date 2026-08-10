@@ -199,14 +199,14 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
           else if (i <= 930) airSum += val;
         }
 
-        const gain = currentProps.sensitivity * 1.4;
+        const gain = currentProps.sensitivity * 0.45;
         subVal = (subSum / 3.0) * gain;
         kickVal = (kickSum / 9.0) * gain;
         lowMidVal = (lowMidSum / 28.0) * gain;
-        snareVal = (snareSum / 146.0) * gain * 1.5;
-        presVal = (presSum / 164.0) * gain * 2.0;
-        trebVal = (trebSum / 300.0) * gain * 2.4;
-        airVal = (airSum / 280.0) * gain * 2.8;
+        snareVal = (snareSum / 146.0) * gain * 1.1;
+        presVal = (presSum / 164.0) * gain * 1.2;
+        trebVal = (trebSum / 300.0) * gain * 1.3;
+        airVal = (airSum / 280.0) * gain * 1.4;
 
         const currentSubEnergy = subVal + kickVal;
         const currentSnareEnergy = snareVal + presVal;
@@ -219,16 +219,16 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         historyIdx = (historyIdx + 1) % HISTORY_SIZE;
 
         // Dynamic adaptive beat detection using sliding average
-        const kickMinThreshold = Math.max(0.10, 0.35 / Math.max(0.5, currentProps.sensitivity));
-        const snareMinThreshold = Math.max(0.08, 0.30 / Math.max(0.5, currentProps.sensitivity));
+        const kickMinThreshold = Math.max(0.08, 0.20 / Math.max(0.2, currentProps.sensitivity));
+        const snareMinThreshold = Math.max(0.06, 0.15 / Math.max(0.2, currentProps.sensitivity));
 
-        if (currentSubEnergy > Math.max(kickMinThreshold, avgSub * 1.15) && (nowMs - lastKickTime > 130)) {
+        if (currentSubEnergy > Math.max(kickMinThreshold, avgSub * 1.15) && (nowMs - lastKickTime > 120)) {
           isKickBeat = true;
           kickTrigger = 1.0;
           lastKickTime = nowMs;
         }
 
-        if (currentSnareEnergy > Math.max(snareMinThreshold, avgSnare * 1.15) && (nowMs - lastSnareTime > 110)) {
+        if (currentSnareEnergy > Math.max(snareMinThreshold, avgSnare * 1.15) && (nowMs - lastSnareTime > 100)) {
           isSnareBeat = true;
           snareTrigger = 1.0;
           lastSnareTime = nowMs;
@@ -239,14 +239,14 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       kickTrigger *= 0.88;
       snareTrigger *= 0.88;
 
-      // Dynamic target calculations for all 7 frequency bands
-      const targetSub = Math.min(1.5, subVal * 1.4);
-      const targetKick = Math.min(1.5, kickVal * 1.4);
-      const targetMid = Math.min(1.5, lowMidVal * 1.4);
-      const targetSnare = Math.min(1.5, snareVal * 1.4);
-      const targetPres = Math.min(1.5, presVal * 1.5);
-      const targetTreb = Math.min(1.5, trebVal * 1.6);
-      const targetAir = Math.min(1.5, airVal * 1.8);
+      // Dynamic target calculations for all 7 frequency bands (Linear range 0.0 to 1.2)
+      const targetSub = Math.min(1.2, subVal);
+      const targetKick = Math.min(1.2, kickVal);
+      const targetMid = Math.min(1.2, lowMidVal);
+      const targetSnare = Math.min(1.2, snareVal);
+      const targetPres = Math.min(1.2, presVal);
+      const targetTreb = Math.min(1.2, trebVal);
+      const targetAir = Math.min(1.2, airVal);
 
       // Asymmetric dual-speed lerp (Instant Attack on transients + Smooth Liquid Decay)
       const dualLerp = (cur: number, target: number, attack = 0.40, decay = 0.08) => {
