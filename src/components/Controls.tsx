@@ -484,8 +484,8 @@ export const Controls: React.FC<ControlsProps> = ({
               </div>
               <input
                 type="range"
-                min="0.0"
-                max="8.0"
+                min="0.5"
+                max="10.0"
                 step="0.1"
                 value={sensitivity}
                 onChange={(e) => setSensitivity(parseFloat(e.target.value))}

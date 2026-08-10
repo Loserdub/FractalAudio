@@ -142,9 +142,9 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     let kickTrigger = 0;
     let snareTrigger = 0;
 
-    const HISTORY_SIZE = 43;
-    const historySub: number[] = new Array(HISTORY_SIZE).fill(0);
-    const historySnare: number[] = new Array(HISTORY_SIZE).fill(0);
+    const HISTORY_SIZE = 30; // 0.5-second sliding window for responsive envelope tracking
+    const historySub: number[] = new Array(HISTORY_SIZE).fill(0.3);
+    const historySnare: number[] = new Array(HISTORY_SIZE).fill(0.3);
     let historyIdx = 0;
 
     let lastKickTime = 0;
@@ -204,20 +204,27 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         trebVal = (trebSum / 300.0) * gain * 2.2;
         airVal = (airSum / 280.0) * gain * 2.5;
 
+        const currentSubEnergy = subVal + kickVal;
+        const currentSnareEnergy = snareVal + presVal;
+
         const avgSub = historySub.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
         const avgSnare = historySnare.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
 
-        historySub[historyIdx] = subVal + kickVal;
-        historySnare[historyIdx] = snareSum;
+        historySub[historyIdx] = currentSubEnergy;
+        historySnare[historyIdx] = currentSnareEnergy;
         historyIdx = (historyIdx + 1) % HISTORY_SIZE;
 
-        if ((subVal + kickVal) > Math.max(0.12, avgSub * 1.25) && (nowMs - lastKickTime > 150)) {
+        // Dynamic adaptive beat detection using sliding average
+        const kickMinThreshold = Math.max(0.12, 0.40 / Math.max(0.5, currentProps.sensitivity));
+        const snareMinThreshold = Math.max(0.10, 0.35 / Math.max(0.5, currentProps.sensitivity));
+
+        if (currentSubEnergy > Math.max(kickMinThreshold, avgSub * 1.15) && (nowMs - lastKickTime > 130)) {
           isKickBeat = true;
           kickTrigger = 1.0;
           lastKickTime = nowMs;
         }
 
-        if ((snareVal + presVal) > Math.max(0.10, avgSnare * 1.28) && (nowMs - lastSnareTime > 120)) {
+        if (currentSnareEnergy > Math.max(snareMinThreshold, avgSnare * 1.15) && (nowMs - lastSnareTime > 110)) {
           isSnareBeat = true;
           snareTrigger = 1.0;
           lastSnareTime = nowMs;
