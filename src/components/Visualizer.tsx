@@ -239,11 +239,11 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         const gain = currentProps.sensitivity * 0.45;
         subVal = (subSum / 3.0) * gain;
         kickVal = (kickSum / 9.0) * gain;
-        lowMidVal = (lowMidSum / 26.0) * gain;
-        snareVal = (snareSum / 78.0) * gain * 1.15;
-        presVal = (presSum / 162.0) * gain * 1.25;
-        trebVal = (trebSum / 279.0) * gain * 1.35;
-        airVal = (airSum / 373.0) * gain * 1.45;
+        lowMidVal = (lowMidSum / 26.0) * gain * 1.1;
+        snareVal = (snareSum / 78.0) * gain * 1.25;
+        presVal = (presSum / 162.0) * gain * 1.45;
+        trebVal = (trebSum / 279.0) * gain * 1.75;
+        airVal = (airSum / 373.0) * gain * 2.1;
 
         // Spectral Flux Adaptive Onset Detection (Acoustic Transient Tracking)
         kickFluxMean = kickFluxMean * 0.88 + kickFlux * 0.12;

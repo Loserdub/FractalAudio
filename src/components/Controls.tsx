@@ -417,24 +417,82 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
             </div>
           </div>
 
-          {/* Julia Constant Presets */}
+          {/* Julia Constant & Coordinates Controls */}
           {(geometryMode === 0 || geometryMode === 2) && (
-            <div className="space-y-2 pt-1 border-t border-white/10">
-              <div className="text-xs font-mono uppercase tracking-wider text-white/60">Julia Constant Presets</div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {JULIA_PRESETS.map((preset) => (
-                  <button
-                    key={preset.name}
-                    onClick={() => setJuliaC({ x: preset.x, y: preset.y })}
-                    className={`px-2.5 py-1.5 text-xs font-mono rounded-lg transition-all text-left ${
-                      Math.abs(juliaC.x - preset.x) < 0.001 && Math.abs(juliaC.y - preset.y) < 0.001
-                        ? 'bg-lime-400 text-black font-bold shadow-sm'
-                        : 'bg-white/5 text-white/70 hover:bg-white/10'
-                    }`}
-                  >
-                    {preset.name}
-                  </button>
-                ))}
+            <div className="space-y-3 pt-2 border-t border-white/10">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest text-white/60">
+                  <Activity size={13} className="text-lime-400" />
+                  <span>Julia Constant Coordinates</span>
+                </div>
+                <button
+                  onClick={() => setJuliaC({ x: -0.8, y: 0.156 })}
+                  className="text-[10px] font-mono text-lime-400/70 hover:text-lime-400 uppercase tracking-wider transition-colors"
+                  title="Reset to Default (-0.8, 0.156)"
+                >
+                  Reset Default
+                </button>
+              </div>
+
+              {/* Real and Imaginary Coordinate Sliders */}
+              <div className="space-y-2.5 p-2.5 bg-white/5 rounded-xl border border-white/10">
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono uppercase tracking-wider text-white/70">
+                    <span>C Real (X)</span>
+                    <span className="text-lime-400 font-bold">{juliaC.x.toFixed(3)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-2.0"
+                    max="2.0"
+                    step="0.002"
+                    value={juliaC.x}
+                    onChange={(e) => setJuliaC({ ...juliaC, x: parseFloat(e.target.value) })}
+                    className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-lime-400"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono uppercase tracking-wider text-white/70">
+                    <span>C Imaginary (Y)</span>
+                    <span className="text-lime-400 font-bold">{juliaC.y.toFixed(3)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-2.0"
+                    max="2.0"
+                    step="0.002"
+                    value={juliaC.y}
+                    onChange={(e) => setJuliaC({ ...juliaC, y: parseFloat(e.target.value) })}
+                    className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-lime-400"
+                  />
+                </div>
+              </div>
+
+              {/* Julia Presets */}
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-white/50">Mathematical Presets</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {JULIA_PRESETS.map((preset) => {
+                    const isActive = Math.abs(juliaC.x - preset.x) < 0.015 && Math.abs(juliaC.y - preset.y) < 0.015;
+                    return (
+                      <button
+                        key={preset.name}
+                        onClick={() => setJuliaC({ x: preset.x, y: preset.y })}
+                        className={`px-2.5 py-1.5 text-xs font-mono rounded-lg transition-all text-left flex justify-between items-center ${
+                          isActive
+                            ? 'bg-lime-400 text-black font-bold shadow-sm'
+                            : 'bg-white/5 text-white/70 hover:bg-white/10'
+                        }`}
+                      >
+                        <span>{preset.name}</span>
+                        <span className={`text-[9px] ${isActive ? 'text-black/60' : 'text-white/40'}`}>
+                          {preset.x > 0 ? `+${preset.x}` : preset.x}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
@@ -445,7 +503,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
             {/* Camera Orbit Speed */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                <label>3D Camera Orbit Speed</label>
+                <label>{geometryMode === 0 ? 'Liquid Rotation Speed' : '3D Camera Orbit Speed'}</label>
                 <span className="text-lime-400">{rotSpeed.toFixed(1)}x</span>
               </div>
               <input
@@ -462,7 +520,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
             {/* Volumetric Glow */}
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                <label>Glow & Specular Intensity</label>
+                <label>{geometryMode === 0 ? 'Luminance & Glow Depth' : 'Glow & Specular Intensity'}</label>
                 <span>{glowIntensity.toFixed(1)}</span>
               </div>
               <input
