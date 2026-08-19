@@ -125,7 +125,7 @@ export default function App() {
     });
   }, [startMediaRecording, geometryMode, fxMode, kaleidoscopeFolds, zoom, rotSpeed, glowIntensity, colorBase, juliaC]);
 
-  const randomize = () => {
+  const randomize = useCallback(() => {
     const newJulia = { x: (Math.random() * 4 - 2), y: (Math.random() * 4 - 2) };
     const newColor = { h: Math.random(), s: 0.6 + Math.random() * 0.4, l: 0.4 + Math.random() * 0.4 };
     const newZoom = 0.6 + Math.random() * 1.8;
@@ -149,7 +149,7 @@ export default function App() {
       fxMode: newFx,
       kaleidoscopeFolds: newFolds
     });
-  };
+  }, [recordKeyframe]);
 
   return (
     <div className="relative w-full h-screen overflow-hidden text-white font-sans">

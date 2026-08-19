@@ -13,6 +13,11 @@ export const useMediaRecorder = (
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [hasSessionKeyframes, setHasSessionKeyframes] = useState(false);
 
+  const isRecordingRef = useRef(false);
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
@@ -176,14 +181,14 @@ export const useMediaRecorder = (
 
   // 3. RECORD PARAMETER KEYFRAME CHANGE
   const recordKeyframe = useCallback((params: Record<string, any>) => {
-    if (!isRecording) return;
+    if (!isRecordingRef.current) return;
     const elapsedSec = (Date.now() - startTimeRef.current) / 1000;
     keyframesRef.current.push({
       timestampSec: parseFloat(elapsedSec.toFixed(2)),
       params
     });
     setHasSessionKeyframes(true);
-  }, [isRecording]);
+  }, []);
 
   // 4. EXPORT SESSION AUTOMATION JSON
   const exportSessionJson = useCallback(() => {

@@ -55,7 +55,7 @@ const formatTime = (secs: number) => {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
-export const Controls: React.FC<ControlsProps> = ({
+export const Controls: React.FC<ControlsProps> = React.memo(({
   audioMode,
   switchMode,
   isPlaying,
@@ -550,4 +550,4 @@ export const Controls: React.FC<ControlsProps> = ({
       )}
     </div>
   );
-};
+});

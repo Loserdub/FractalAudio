@@ -22,9 +22,15 @@ export const useAudioAnalyzer = () => {
   const mediaElementSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const objectUrlRef = useRef<string | null>(null);
 
-  // Demo Synth Sequencer Refs
-  const demoIntervalRef = useRef<number | null>(null);
+  // Demo Synth Sequencer Refs (Sample-Accurate Lookahead Clock)
+  const demoTimerIdRef = useRef<number | null>(null);
   const demoStepRef = useRef<number>(0);
+  const demoNextNoteTimeRef = useRef<number>(0);
+  const volumeRef = useRef<number>(volume);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
 
   // Ensure AudioContext and MediaStreamDestination are initialized
   const getOrCreateAudioContext = useCallback(() => {
@@ -33,7 +39,8 @@ export const useAudioAnalyzer = () => {
       const ctx = new AudioCtx();
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 2048;
-      analyser.smoothingTimeConstant = 0.8;
+      // Fast transient response to avoid artificial pre-lag
+      analyser.smoothingTimeConstant = 0.05;
 
       const dest = ctx.createMediaStreamDestination();
       analyser.connect(dest);
@@ -65,16 +72,16 @@ export const useAudioAnalyzer = () => {
     if (audioElementRef.current) {
       audioElementRef.current.pause();
     }
-    if (demoIntervalRef.current) {
-      window.clearInterval(demoIntervalRef.current);
-      demoIntervalRef.current = null;
+    if (demoTimerIdRef.current) {
+      window.clearInterval(demoTimerIdRef.current);
+      demoTimerIdRef.current = null;
     }
 
     setIsListening(false);
     setIsPlaying(false);
   }, []);
 
-  // 1. GENERATIVE DEMO SYNTH SEQUENCER
+  // 1. SAMPLE-ACCURATE LOOKAHEAD GENERATIVE DEMO SYNTH SEQUENCER
   const startDemoSynth = useCallback(() => {
     stopAllSources();
     const { ctx, analyser } = getOrCreateAudioContext();
@@ -84,73 +91,82 @@ export const useAudioAnalyzer = () => {
     setFileName('Generative Synth Loop (120 BPM)');
 
     const tempo = 120;
-    const stepTime = (60 / tempo) / 4 * 1000;
+    const stepDuration = (60 / tempo) / 4; // 16th note in seconds (0.125s)
+    const lookaheadMs = 25; // Interval timer interval (ms)
+    const scheduleAheadTime = 0.1; // Schedule window ahead of AudioContext clock (seconds)
+
     demoStepRef.current = 0;
+    demoNextNoteTimeRef.current = ctx.currentTime + 0.05;
 
-    const playStep = () => {
-      if (!ctx || ctx.state === 'closed') return;
-      const now = ctx.currentTime;
-      const step = demoStepRef.current;
+    const scheduleStep = (step: number, time: number) => {
+      const vol = volumeRef.current;
 
-      // 1. Kick Drum
+      // 1. Kick Drum (Steps 0, 4, 8, 12)
       if (step % 4 === 0) {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.frequency.setValueAtTime(150, now);
-        osc.frequency.exponentialRampToValueAtTime(30, now + 0.12);
-        gain.gain.setValueAtTime(0.9 * volume, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        osc.frequency.setValueAtTime(160, time);
+        osc.frequency.exponentialRampToValueAtTime(32, time + 0.11);
+        gain.gain.setValueAtTime(0.95 * vol, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.14);
         osc.connect(gain);
         gain.connect(analyser);
         gain.connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.15);
+        osc.start(time);
+        osc.stop(time + 0.15);
       }
 
-      // 2. Sub Bass
+      // 2. Sub Bass (Steps 0, 2, 4, 6, 8, 10, 12, 14)
       const bassNotes = [55, 55, 65.41, 55, 49, 55, 65.41, 73.42];
-      const bassFreq = bassNotes[(step / 2) % bassNotes.length];
+      const bassFreq = bassNotes[Math.floor(step / 2) % bassNotes.length];
       if (step % 2 === 0) {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         const filter = ctx.createBiquadFilter();
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(bassFreq, now);
+        osc.frequency.setValueAtTime(bassFreq, time);
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(350, now);
-        gain.gain.setValueAtTime(0.4 * volume, now);
-        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        filter.frequency.setValueAtTime(380, time);
+        gain.gain.setValueAtTime(0.45 * vol, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.18);
         osc.connect(filter);
         filter.connect(gain);
         gain.connect(analyser);
         gain.connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.2);
+        osc.start(time);
+        osc.stop(time + 0.19);
       }
 
-      // 3. Arp Synth
+      // 3. Arp Synth (Odd steps)
       const arpScale = [440, 523.25, 659.25, 783.99, 880, 1046.5, 659.25, 523.25];
       if (step % 2 === 1) {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
-        const arpFreq = arpScale[(step + Math.floor(now)) % arpScale.length];
-        osc.frequency.setValueAtTime(arpFreq, now);
-        gain.gain.setValueAtTime(0.25 * volume, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        const arpFreq = arpScale[(step + Math.floor(time * 2)) % arpScale.length];
+        osc.frequency.setValueAtTime(arpFreq, time);
+        gain.gain.setValueAtTime(0.28 * vol, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.11);
         osc.connect(gain);
         gain.connect(analyser);
         gain.connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.12);
+        osc.start(time);
+        osc.stop(time + 0.12);
       }
-
-      demoStepRef.current = (step + 1) % 16;
     };
 
-    playStep();
-    demoIntervalRef.current = window.setInterval(playStep, stepTime);
-  }, [stopAllSources, getOrCreateAudioContext, volume]);
+    const scheduler = () => {
+      if (!ctx || ctx.state === 'closed') return;
+      while (demoNextNoteTimeRef.current < ctx.currentTime + scheduleAheadTime) {
+        scheduleStep(demoStepRef.current, demoNextNoteTimeRef.current);
+        demoStepRef.current = (demoStepRef.current + 1) % 16;
+        demoNextNoteTimeRef.current += stepDuration;
+      }
+    };
+
+    scheduler();
+    demoTimerIdRef.current = window.setInterval(scheduler, lookaheadMs);
+  }, [stopAllSources, getOrCreateAudioContext]);
 
   // 2. MICROPHONE INPUT MODE
   const startMic = useCallback(async () => {
@@ -272,6 +288,7 @@ export const useAudioAnalyzer = () => {
 
   const setVolume = useCallback((val: number) => {
     setVolumeState(val);
+    volumeRef.current = val;
     if (audioElementRef.current) {
       audioElementRef.current.volume = val;
     }

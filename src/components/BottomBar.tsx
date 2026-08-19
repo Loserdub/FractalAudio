@@ -24,7 +24,7 @@ const formatTime = (secs: number) => {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
-export const BottomBar: React.FC<BottomBarProps> = ({
+export const BottomBar: React.FC<BottomBarProps> = React.memo(({
   audioMode,
   switchMode,
   isListening,
@@ -162,4 +162,4 @@ export const BottomBar: React.FC<BottomBarProps> = ({
       </div>
     </div>
   );
-};
+});

@@ -104,6 +104,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     locationsRef.current = {
       u_resolution: gl.getUniformLocation(program, 'u_resolution'),
       u_time: gl.getUniformLocation(program, 'u_time'),
+      u_audio_time: gl.getUniformLocation(program, 'u_audio_time'),
       u_zoom: gl.getUniformLocation(program, 'u_zoom'),
       u_offset: gl.getUniformLocation(program, 'u_offset'),
       u_c: gl.getUniformLocation(program, 'u_c'),
@@ -140,19 +141,20 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     handleResize();
 
     let dataArray: Uint8Array | null = null;
+    let prevDataArray: Uint8Array | null = null;
     let smoothedLow = 0, smoothedMid = 0, smoothedHigh = 0;
     let smoothedSub = 0, smoothedKick = 0, smoothedSnare = 0, smoothedPres = 0, smoothedTreb = 0, smoothedAir = 0;
     
     let kickTrigger = 0;
     let snareTrigger = 0;
-
-    const HISTORY_SIZE = 30; // 0.5-second sliding window for responsive envelope tracking
-    const historySub: number[] = new Array(HISTORY_SIZE).fill(0.3);
-    const historySnare: number[] = new Array(HISTORY_SIZE).fill(0.3);
-    let historyIdx = 0;
+    let kickFluxMean = 0.05;
+    let snareFluxMean = 0.05;
 
     let lastKickTime = 0;
     let lastSnareTime = 0;
+    let lastFrameTime = performance.now();
+    let lastMetricsEmitTime = 0;
+    let audioTime = 0;
 
     const render = () => {
       const gl = glRef.current;
@@ -165,8 +167,11 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         return;
       }
 
+      const nowMs = performance.now();
+      const dt = Math.min(0.1, Math.max(0.001, (nowMs - lastFrameTime) * 0.001));
+      lastFrameTime = nowMs;
+
       const time = (Date.now() - startTimeRef.current) * 0.001;
-      const nowMs = Date.now();
       
       if (canvasRef.current) {
         gl.uniform2f(locs.u_resolution, canvasRef.current.width, canvasRef.current.height);
@@ -182,90 +187,121 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         currentProps.analyser.getByteFrequencyData(dataArray);
 
         let subSum = 0, kickSum = 0, lowMidSum = 0, snareSum = 0, presSum = 0, trebSum = 0, airSum = 0;
+        let kickFlux = 0;
+        let snareFlux = 0;
 
-        for (let i = 1; i < 930; i++) {
-          const val = Math.pow(dataArray[i] / 255.0, 1.1); // Dynamic scaling preserving mid/high details
+        for (let i = 1; i <= 930; i++) {
+          const rawVal = dataArray[i] / 255.0;
+          const val = Math.pow(rawVal, 1.1); // Dynamic power scaling preserving mid/high details
+          const prevRawVal = prevDataArray && i < prevDataArray.length ? prevDataArray[i] / 255.0 : 0;
+          const flux = Math.max(0, rawVal - prevRawVal);
 
-          // Frequency mapping (assuming ~44.1kHz / 2048 fft -> ~21.5Hz per bin):
-          // Sub-Bass & Bass (20Hz - 250Hz): Bins 1..12
-          if (i <= 3) subSum += val;
-          else if (i <= 12) kickSum += val;
-          // Mids (250Hz - 4kHz): Bins 13..186
-          else if (i <= 40) lowMidSum += val;
-          else if (i <= 186) snareSum += val;
-          // Treble & Highs (4kHz - 20kHz): Bins 187..930
-          else if (i <= 350) presSum += val;
-          else if (i <= 650) trebSum += val;
-          else if (i <= 930) airSum += val;
+          // Logarithmic / Mel Frequency mapping (~44.1kHz / 2048 fft -> ~21.5Hz per bin):
+          // Sub-Bass (20Hz - 60Hz): Bins 1..3
+          if (i <= 3) {
+            subSum += val;
+            kickFlux += flux * 1.6;
+          }
+          // Kick / Bass Punch (60Hz - 250Hz): Bins 4..12
+          else if (i <= 12) {
+            kickSum += val;
+            kickFlux += flux * 1.2;
+          }
+          // Low Mids (250Hz - 800Hz): Bins 13..38
+          else if (i <= 38) {
+            lowMidSum += val;
+          }
+          // Snare / Body (800Hz - 2.5kHz): Bins 39..116
+          else if (i <= 116) {
+            snareSum += val;
+            snareFlux += flux * 1.3;
+          }
+          // Presence (2.5kHz - 6kHz): Bins 117..278
+          else if (i <= 278) {
+            presSum += val;
+            snareFlux += flux * 0.8;
+          }
+          // Treble (6kHz - 12kHz): Bins 279..557
+          else if (i <= 557) {
+            trebSum += val;
+          }
+          // Air / Brilliance (12kHz - 20kHz): Bins 558..930
+          else {
+            airSum += val;
+          }
         }
+
+        if (!prevDataArray || prevDataArray.length !== dataArray.length) {
+          prevDataArray = new Uint8Array(dataArray.length);
+        }
+        prevDataArray.set(dataArray);
 
         const gain = currentProps.sensitivity * 0.45;
         subVal = (subSum / 3.0) * gain;
         kickVal = (kickSum / 9.0) * gain;
-        lowMidVal = (lowMidSum / 28.0) * gain;
-        snareVal = (snareSum / 146.0) * gain * 1.1;
-        presVal = (presSum / 164.0) * gain * 1.2;
-        trebVal = (trebSum / 300.0) * gain * 1.3;
-        airVal = (airSum / 280.0) * gain * 1.4;
+        lowMidVal = (lowMidSum / 26.0) * gain;
+        snareVal = (snareSum / 78.0) * gain * 1.15;
+        presVal = (presSum / 162.0) * gain * 1.25;
+        trebVal = (trebSum / 279.0) * gain * 1.35;
+        airVal = (airSum / 373.0) * gain * 1.45;
 
-        const currentSubEnergy = subVal + kickVal;
-        const currentSnareEnergy = snareVal + presVal;
+        // Spectral Flux Adaptive Onset Detection (Acoustic Transient Tracking)
+        kickFluxMean = kickFluxMean * 0.88 + kickFlux * 0.12;
+        snareFluxMean = snareFluxMean * 0.88 + snareFlux * 0.12;
 
-        const avgSub = historySub.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
-        const avgSnare = historySnare.reduce((a, b) => a + b, 0) / HISTORY_SIZE;
+        const kickMinThreshold = Math.max(0.12, (kickFluxMean * 1.4) / Math.max(0.25, currentProps.sensitivity));
+        const snareMinThreshold = Math.max(0.09, (snareFluxMean * 1.4) / Math.max(0.25, currentProps.sensitivity));
 
-        historySub[historyIdx] = currentSubEnergy;
-        historySnare[historyIdx] = currentSnareEnergy;
-        historyIdx = (historyIdx + 1) % HISTORY_SIZE;
-
-        // Dynamic adaptive beat detection using sliding average
-        const kickMinThreshold = Math.max(0.08, 0.20 / Math.max(0.2, currentProps.sensitivity));
-        const snareMinThreshold = Math.max(0.06, 0.15 / Math.max(0.2, currentProps.sensitivity));
-
-        if (currentSubEnergy > Math.max(kickMinThreshold, avgSub * 1.15) && (nowMs - lastKickTime > 120)) {
+        if (kickFlux > kickMinThreshold && (nowMs - lastKickTime > 110)) {
           isKickBeat = true;
           kickTrigger = 1.0;
           lastKickTime = nowMs;
         }
 
-        if (currentSnareEnergy > Math.max(snareMinThreshold, avgSnare * 1.15) && (nowMs - lastSnareTime > 100)) {
+        if (snareFlux > snareMinThreshold && (nowMs - lastSnareTime > 90)) {
           isSnareBeat = true;
           snareTrigger = 1.0;
           lastSnareTime = nowMs;
         }
       }
 
-      // Smooth exponential decay on beat triggers for glowing transient pops
-      kickTrigger *= 0.88;
-      snareTrigger *= 0.88;
+      // Delta-time independent exponential decay on transient beat triggers
+      kickTrigger *= Math.exp(-9.5 * dt);
+      snareTrigger *= Math.exp(-9.5 * dt);
 
-      // Dynamic target calculations for all 7 frequency bands (Linear range 0.0 to 1.2)
-      const targetSub = Math.min(1.2, subVal);
-      const targetKick = Math.min(1.2, kickVal);
-      const targetMid = Math.min(1.2, lowMidVal);
-      const targetSnare = Math.min(1.2, snareVal);
-      const targetPres = Math.min(1.2, presVal);
-      const targetTreb = Math.min(1.2, trebVal);
-      const targetAir = Math.min(1.2, airVal);
+      // Dynamic targets for all 7 frequency bands
+      const targetSub = Math.min(1.3, subVal);
+      const targetKick = Math.min(1.3, kickVal);
+      const targetMid = Math.min(1.3, lowMidVal);
+      const targetSnare = Math.min(1.3, snareVal);
+      const targetPres = Math.min(1.3, presVal);
+      const targetTreb = Math.min(1.3, trebVal);
+      const targetAir = Math.min(1.3, airVal);
 
-      // Asymmetric dual-speed lerp (Instant Attack on transients + Smooth Liquid Decay)
-      const dualLerp = (cur: number, target: number, attack = 0.40, decay = 0.08) => {
-        const alpha = target > cur ? attack : decay;
-        return cur + (target - cur) * alpha;
+      // Frame-rate independent dual-speed exponential smoothing (Instant Attack + Liquid Decay)
+      const expLerp = (cur: number, target: number, attackRate = 34.0, decayRate = 6.8) => {
+        const rate = target > cur ? attackRate : decayRate;
+        return cur + (target - cur) * (1.0 - Math.exp(-rate * dt));
       };
 
-      smoothedSub = dualLerp(smoothedSub, targetSub, 0.45, 0.07);
-      smoothedKick = dualLerp(smoothedKick, targetKick, 0.42, 0.08);
-      smoothedMid = dualLerp(smoothedMid, targetMid, 0.38, 0.08);
-      smoothedSnare = dualLerp(smoothedSnare, targetSnare, 0.40, 0.08);
-      smoothedPres = dualLerp(smoothedPres, targetPres, 0.35, 0.08);
-      smoothedTreb = dualLerp(smoothedTreb, targetTreb, 0.35, 0.08);
-      smoothedAir = dualLerp(smoothedAir, targetAir, 0.35, 0.08);
+      smoothedSub = expLerp(smoothedSub, targetSub, 36.0, 5.8);
+      smoothedKick = expLerp(smoothedKick, targetKick, 34.0, 6.2);
+      smoothedMid = expLerp(smoothedMid, targetMid, 30.0, 6.8);
+      smoothedSnare = expLerp(smoothedSnare, targetSnare, 32.0, 6.8);
+      smoothedPres = expLerp(smoothedPres, targetPres, 28.0, 7.2);
+      smoothedTreb = expLerp(smoothedTreb, targetTreb, 28.0, 7.2);
+      smoothedAir = expLerp(smoothedAir, targetAir, 28.0, 7.2);
 
       smoothedLow = (smoothedSub * 0.5 + smoothedKick * 0.5);
       smoothedHigh = (smoothedPres * 0.3 + smoothedTreb * 0.4 + smoothedAir * 0.3);
 
-      if (currentProps.onAudioMetricsUpdate) {
+      // Kinetic Audio Momentum / Phase Velocity Accumulator
+      const kineticVelocity = 0.8 + smoothedKick * 1.8 + smoothedSub * 1.2 + kickTrigger * 0.8;
+      audioTime += kineticVelocity * dt * currentProps.rotSpeed;
+
+      // Throttle React UI metrics updates to ~30 FPS (every 33ms) to prevent render churn
+      if (currentProps.onAudioMetricsUpdate && (nowMs - lastMetricsEmitTime >= 33)) {
+        lastMetricsEmitTime = nowMs;
         currentProps.onAudioMetricsUpdate({
           sub: smoothedSub,
           kick: smoothedKick,
@@ -282,6 +318,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       }
 
       gl.uniform1f(locs.u_time, time);
+      gl.uniform1f(locs.u_audio_time, audioTime);
       gl.uniform1f(locs.u_zoom, currentProps.zoom);
       gl.uniform2f(locs.u_offset, currentProps.offsetX, currentProps.offsetY);
       gl.uniform2f(locs.u_c, currentProps.juliaC.x, currentProps.juliaC.y);
