@@ -20,13 +20,21 @@ uniform float u_audio_low;   // Composite Low (Sub + Kick)
 uniform float u_audio_mid;   // Low Mids (250Hz-800Hz)
 uniform float u_audio_high;  // Composite High (Pres + Treb + Air)
 
-// Full 7-Band Frequency Uniforms
+// Full 7-Band Frequency Uniforms (Backwards Compatibility)
 uniform float u_audio_sub;   // Sub-bass (20-60Hz)
 uniform float u_audio_kick;  // Kick punch (60-250Hz)
 uniform float u_audio_snare; // Snare attack (800Hz-2.5kHz)
 uniform float u_audio_pres;  // Presence (2.5kHz-6kHz)
 uniform float u_audio_treb;  // Treble (6kHz-12kHz)
 uniform float u_audio_air;   // Air / Brilliance (12kHz-20kHz)
+
+// Full 18-Band Mel-Spaced Psychoacoustic Array
+uniform float u_bands[18];
+
+// High-Level Acoustic Feature Descriptors
+uniform float u_spectral_centroid;  // Timbre brightness & filter sweeps (0.0 to 1.0)
+uniform float u_spectral_flatness;  // Tonal clarity vs noise wash (0.0 to 1.0)
+uniform float u_energy_flux;        // Transient onset energy
 
 // Beat Transient Uniforms
 uniform float u_beat_kick;   // Smoothed kick transient (0.0 - 1.0)
@@ -100,28 +108,29 @@ vec2 applyKaleidoscope(vec2 p, float folds) {
     return vec2(cos(angle), sin(angle)) * radius;
 }
 
-// High-frequency tactile surface ripple displacement from Treble, Presence, & Air
+// High-frequency tactile surface ripple displacement from upper psychoacoustic bands
 float getMicroDisplacement(vec3 p) {
     float ripple = sin(p.x * 20.0 + u_audio_time * 3.5) * cos(p.y * 20.0 - u_audio_time * 2.8) * sin(p.z * 20.0);
-    return ripple * (u_audio_treb * 0.022 + u_audio_air * 0.018 + u_audio_pres * 0.012);
+    float highEnergy = u_bands[13] * 0.008 + u_bands[15] * 0.012 + u_bands[17] * 0.015;
+    return ripple * (highEnergy + u_audio_treb * 0.015 + u_spectral_flatness * 0.008);
 }
 
 // ----------------------------------------------------
-// CLASSIC 2D LIQUID JULIA FRACTAL RENDERER (7-Band Responsive Engine)
+// CLASSIC 2D LIQUID JULIA FRACTAL RENDERER (18-Band Responsive Engine)
 // ----------------------------------------------------
 vec4 renderLiquidJulia2D(vec2 uv) {
     // 1. Fluid 2D Rotation driven continuously by Mids, Snare, & Kinetic Audio Momentum
-    float angle = u_audio_mid * 0.35 + u_audio_snare * 0.25 + u_beat_snare * 0.15 + u_audio_time * 0.08 * u_rot_speed;
+    float angle = (u_bands[7] + u_bands[9]) * 0.25 + u_audio_snare * 0.20 + u_beat_snare * 0.15 + u_audio_time * 0.08 * u_rot_speed;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
     
     // 2. Dynamic Scale / Zoom centered on u_offset with Sub-bass & Kick expansion
-    float zoomFactor = (1.6 / max(0.05, u_zoom)) * (1.0 - u_audio_sub * 0.14 - u_audio_kick * 0.18 - u_beat_kick * 0.10);
+    float zoomFactor = (1.6 / max(0.05, u_zoom)) * (1.0 - (u_bands[0] + u_bands[1]) * 0.10 - u_audio_kick * 0.12 - u_beat_kick * 0.08);
     vec2 p = rot * (uv * zoomFactor) + u_offset;
     
     // 3. Harmonic Audio Orbit on Julia Constant C (keeps fractal structurally connected & fluid)
     vec2 c_mod = vec2(
-        cos(u_audio_time * 0.20 + u_audio_sub * 0.8) * (0.02 + u_audio_kick * 0.025 + u_beat_kick * 0.02),
-        sin(u_audio_time * 0.18 + u_audio_treb * 0.8) * (0.02 + u_audio_snare * 0.025 + u_beat_snare * 0.02)
+        cos(u_audio_time * 0.20 + (u_bands[0] + u_bands[1]) * 0.8) * (0.02 + u_audio_kick * 0.025 + u_beat_kick * 0.02),
+        sin(u_audio_time * 0.18 + (u_bands[14] + u_bands[16]) * 0.8) * (0.02 + u_audio_snare * 0.025 + u_beat_snare * 0.02)
     );
     vec2 c = u_c + c_mod;
     
@@ -150,19 +159,19 @@ vec4 renderLiquidJulia2D(vec2 uv) {
     vec3 color = vec3(0.0);
     if (iter < maxIter) {
         float t = smooth_iter / float(maxIter);
-        // Palette position drifting with Treble, Air, Presence, & Beats
-        float palettePos = t * 0.8 + u_audio_time * 0.03 + u_audio_treb * 0.35 + u_audio_air * 0.25 + u_audio_pres * 0.20;
+        // Palette position drifting with Spectral Centroid filter sweeps, Treble, & Air
+        float palettePos = t * 0.8 + u_audio_time * 0.03 + u_spectral_centroid * 0.25 + u_bands[14] * 0.25 + u_bands[17] * 0.20;
         vec3 basePal = getDynamicPalette(palettePos, u_color_base.x);
         
         // Balanced luminance curve with anti-strobe clamping
-        float light = clamp(0.14 + u_audio_sub * 0.28 + u_audio_kick * 0.30 + u_beat_kick * 0.18 + u_color_base.z * 0.30 * (1.0 - t), 0.08, 1.25);
+        float light = clamp(0.14 + (u_bands[1] + u_bands[3]) * 0.25 + u_audio_kick * 0.25 + u_beat_kick * 0.18 + u_color_base.z * 0.30 * (1.0 - t), 0.08, 1.25);
         color = basePal * light * (1.0 + u_glow_intensity * 0.35);
         // High-frequency treble shimmer with soft power response
-        color += basePal * (u_audio_treb * 0.38 + u_audio_air * 0.30 + u_beat_snare * 0.20) * pow(t, 0.7);
+        color += basePal * (u_bands[15] * 0.35 + u_bands[17] * 0.30 + u_beat_snare * 0.20) * pow(t, 0.7);
     } else {
         // Core dark obsidian pulse driven gently by Sub-bass & Kick
-        float corePulse = 0.03 + u_audio_sub * 0.25 + u_audio_kick * 0.20 + u_beat_kick * 0.18;
-        vec3 coreColor = getDynamicPalette(u_color_base.x + u_audio_treb * 0.15, u_color_base.x);
+        float corePulse = 0.03 + (u_bands[0] + u_bands[2]) * 0.20 + u_audio_kick * 0.18 + u_beat_kick * 0.15;
+        vec3 coreColor = getDynamicPalette(u_color_base.x + u_spectral_centroid * 0.15, u_color_base.x);
         color = vec3(0.008, 0.012, 0.025) + coreColor * corePulse;
     }
 

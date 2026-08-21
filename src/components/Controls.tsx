@@ -55,7 +55,7 @@ const formatTime = (secs: number) => {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
-// Isolated Real-Time HUD Component - Prevents root Controls from re-rendering 30 times a second
+// Isolated Real-Time 18-Channel Psychoacoustic HUD Component
 const AudioSpectrumHUD: React.FC = React.memo(() => {
   const [metrics, setMetrics] = useState<AudioMetrics | null>(null);
 
@@ -67,6 +67,20 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
 
   const kickIntensity = metrics?.kickIntensity || 0;
   const snareIntensity = metrics?.snareIntensity || 0;
+  const bands = metrics?.bands || [];
+  const centroid = metrics?.spectralCentroid || 0.3;
+  const flatness = metrics?.spectralFlatness || 0.2;
+
+  // 18-channel curated spectral colors (Sub-green -> Bass-cyan -> Vocal-blue -> Pres-purple -> Air-pink)
+  const getBandColor = (idx: number) => {
+    if (idx < 2) return '#84cc16'; // Deep Sub (Lime)
+    if (idx < 5) return '#10b981'; // Kick Punch (Emerald)
+    if (idx < 8) return '#06b6d4'; // Lower Mids (Cyan)
+    if (idx < 11) return '#3b82f6'; // Vocal Mids (Blue)
+    if (idx < 14) return '#8b5cf6'; // Presence (Violet)
+    if (idx < 16) return '#d946ef'; // Treble (Fuchsia)
+    return '#f43f5e'; // Air / Brilliance (Rose)
+  };
 
   return (
     <>
@@ -82,7 +96,7 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
         >
           <Zap size={12} className={kickIntensity > 0.15 ? 'text-lime-400 animate-pulse' : 'text-white/30'} />
           <span className={`text-[10px] font-mono font-bold tracking-wider uppercase ${kickIntensity > 0.15 ? 'text-lime-400' : 'text-white/40'}`}>
-            KICK / PLOSIVE
+            KICK / TRANSIENT
           </span>
         </div>
 
@@ -101,38 +115,39 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
         </div>
       </div>
 
-      {/* REAL-TIME 7-BAND FFT SPECTRUM VISUALIZER */}
-      {metrics && (
-        <div className="space-y-1 pt-1">
-          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/40">
-            <span>Sub</span>
-            <span>Kick</span>
-            <span>Mid</span>
-            <span>Snare</span>
-            <span>Pres</span>
-            <span>Treb</span>
-            <span>Air</span>
+      {/* 18-BAND PSYCHOACOUSTIC EQUALIZER HUD */}
+      {bands.length > 0 && (
+        <div className="space-y-1.5 pt-1.5 border-t border-white/10">
+          <div className="flex justify-between items-center text-[9px] font-mono uppercase tracking-wider text-white/50">
+            <span className="text-lime-400 font-bold">18-Ch Psychoacoustic Mixer</span>
+            <span className="text-[8px] text-white/40">20Hz — 20kHz</span>
           </div>
-          <div className="flex items-end gap-1 h-8 bg-black/40 p-1 rounded-md border border-white/10">
-            {[
-              metrics.sub,
-              metrics.kick,
-              metrics.lowMid,
-              metrics.snare,
-              metrics.presence,
-              metrics.treble,
-              metrics.air,
-            ].map((val, idx) => (
-              <div key={idx} className="flex-1 bg-white/10 rounded-sm h-full flex items-end overflow-hidden">
+
+          <div className="flex items-end gap-0.5 h-10 bg-black/50 p-1 rounded-md border border-white/10">
+            {bands.map((val, idx) => (
+              <div key={idx} className="flex-1 bg-white/5 rounded-xs h-full flex items-end overflow-hidden">
                 <div 
-                  className="w-full transition-all duration-75 rounded-sm"
+                  className="w-full transition-all duration-75 rounded-xs"
                   style={{
-                    height: `${Math.min(100, Math.max(5, val * 100))}%`,
-                    backgroundColor: idx < 2 ? '#a3e635' : idx < 4 ? '#38bdf8' : '#c084fc'
+                    height: `${Math.min(100, Math.max(6, val * 100))}%`,
+                    backgroundColor: getBandColor(idx),
+                    boxShadow: val > 0.6 ? `0 0 6px ${getBandColor(idx)}` : 'none'
                   }}
                 />
               </div>
             ))}
+          </div>
+
+          {/* TIMBRAL DESCRIPTORS (CENTROID & FLATNESS) */}
+          <div className="grid grid-cols-2 gap-2 pt-0.5 text-[9px] font-mono">
+            <div className="flex items-center justify-between px-2 py-1 rounded bg-white/5 border border-white/5">
+              <span className="text-white/40">Filter Brightness:</span>
+              <span className="text-amber-300 font-bold">{(centroid * 100).toFixed(0)}%</span>
+            </div>
+            <div className="flex items-center justify-between px-2 py-1 rounded bg-white/5 border border-white/5">
+              <span className="text-white/40">Tonality / Noise:</span>
+              <span className="text-sky-300 font-bold">{flatness < 0.3 ? 'Tonal' : flatness < 0.6 ? 'Balanced' : 'Noise'}</span>
+            </div>
           </div>
         </div>
       )}

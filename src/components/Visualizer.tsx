@@ -13,7 +13,34 @@ export interface AudioMetrics {
   isSnareBeat: boolean;
   kickIntensity: number;
   snareIntensity: number;
+  // 18-Band Psychoacoustic Spectrum & Feature Descriptors
+  bands: number[];
+  spectralCentroid: number;
+  spectralFlatness: number;
+  energyFlux: number;
 }
+
+// 18 ISO/Mel-Spaced Frequency Bands with Custom Ballistics & Acoustic Weights
+const BAND_DEFINITIONS = [
+  { name: 'Sub 1', start: 1, end: 2, attack: 38.0, decay: 5.5, weight: 1.4 },      // 20-45 Hz
+  { name: 'Sub 2', start: 3, end: 4, attack: 38.0, decay: 5.8, weight: 1.3 },      // 45-85 Hz
+  { name: 'Kick 1', start: 5, end: 6, attack: 44.0, decay: 6.2, weight: 1.25 },    // 85-130 Hz
+  { name: 'Kick 2', start: 7, end: 9, attack: 44.0, decay: 6.5, weight: 1.2 },     // 130-195 Hz
+  { name: 'Bass Low', start: 10, end: 13, attack: 36.0, decay: 6.8, weight: 1.15 }, // 195-280 Hz
+  { name: 'Bass Mid', start: 14, end: 19, attack: 34.0, decay: 7.0, weight: 1.1 },  // 280-410 Hz
+  { name: 'Mid Low', start: 20, end: 27, attack: 32.0, decay: 7.2, weight: 1.1 },   // 410-580 Hz
+  { name: 'Mid Warmth', start: 28, end: 38, attack: 32.0, decay: 7.2, weight: 1.15 },// 580-820 Hz
+  { name: 'Snare Body', start: 39, end: 54, attack: 42.0, decay: 7.5, weight: 1.2 }, // 820-1.16 kHz
+  { name: 'Vocal Low', start: 55, end: 77, attack: 34.0, decay: 7.5, weight: 1.25 },// 1.16-1.65 kHz
+  { name: 'Vocal Mid', start: 78, end: 110, attack: 34.0, decay: 7.8, weight: 1.35 },// 1.65-2.37 kHz
+  { name: 'Snare Snap', start: 111, end: 155, attack: 42.0, decay: 7.8, weight: 1.45 },// 2.37-3.34 kHz
+  { name: 'Pres Low', start: 156, end: 220, attack: 30.0, decay: 8.0, weight: 1.55 }, // 3.34-4.74 kHz
+  { name: 'Pres High', start: 221, end: 310, attack: 30.0, decay: 8.0, weight: 1.7 }, // 4.74-6.68 kHz
+  { name: 'Treb Low', start: 311, end: 440, attack: 28.0, decay: 8.2, weight: 1.85 }, // 6.68-9.47 kHz
+  { name: 'Treb High', start: 441, end: 620, attack: 28.0, decay: 8.5, weight: 2.05 }, // 9.47-13.35 kHz
+  { name: 'Air Low', start: 621, end: 775, attack: 26.0, decay: 8.8, weight: 2.3 },   // 13.35-16.7 kHz
+  { name: 'Air High', start: 776, end: 930, attack: 26.0, decay: 9.0, weight: 2.6 }   // 16.7-20.0 kHz
+];
 
 // Lightweight listener subscription system to avoid root React state re-rendering
 type AudioMetricsCallback = (metrics: AudioMetrics) => void;
@@ -134,6 +161,10 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_audio_pres: gl.getUniformLocation(program, 'u_audio_pres'),
       u_audio_treb: gl.getUniformLocation(program, 'u_audio_treb'),
       u_audio_air: gl.getUniformLocation(program, 'u_audio_air'),
+      u_bands: gl.getUniformLocation(program, 'u_bands'),
+      u_spectral_centroid: gl.getUniformLocation(program, 'u_spectral_centroid'),
+      u_spectral_flatness: gl.getUniformLocation(program, 'u_spectral_flatness'),
+      u_energy_flux: gl.getUniformLocation(program, 'u_energy_flux'),
       u_beat_kick: gl.getUniformLocation(program, 'u_beat_kick'),
       u_beat_snare: gl.getUniformLocation(program, 'u_beat_snare'),
       u_geometry_mode: gl.getUniformLocation(program, 'u_geometry_mode'),
@@ -158,13 +189,21 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
 
     let dataArray: Uint8Array | null = null;
     let prevDataArray: Uint8Array | null = null;
-    let smoothedLow = 0, smoothedMid = 0, smoothedHigh = 0;
-    let smoothedSub = 0, smoothedKick = 0, smoothedSnare = 0, smoothedPres = 0, smoothedTreb = 0, smoothedAir = 0;
+    
+    // 18-Band Envelope Followers & Feature Trackers
+    const smoothedBands = new Float32Array(18);
+    let smoothedCentroid = 0.3;
+    let smoothedFlatness = 0.2;
+    let smoothedFlux = 0.0;
     
     let kickTrigger = 0;
     let snareTrigger = 0;
     let kickFluxMean = 0.05;
     let snareFluxMean = 0.05;
+
+    // AGC (Automatic Gain Control) Dynamic Floor/Peak Normalizer
+    let agcPeak = 0.40;
+    let agcFloor = 0.01;
 
     let lastKickTime = 0;
     let lastSnareTime = 0;
@@ -193,8 +232,8 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         gl.uniform2f(locs.u_resolution, canvasRef.current.width, canvasRef.current.height);
       }
 
-      let subVal = 0, kickVal = 0, lowMidVal = 0, snareVal = 0, presVal = 0, trebVal = 0, airVal = 0;
       let isKickBeat = false, isSnareBeat = false;
+      const rawBands = new Float32Array(18);
 
       if (currentProps.analyser) {
         if (!dataArray || dataArray.length !== currentProps.analyser.frequencyBinCount) {
@@ -203,79 +242,83 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         }
         currentProps.analyser.getByteFrequencyData(dataArray);
 
-        let subSum = 0, kickSum = 0, lowMidSum = 0, snareSum = 0, presSum = 0, trebSum = 0, airSum = 0;
+        const inv255 = 1.0 / 255.0;
+        let weightedFreqSum = 0;
+        let totalEnergySum = 0;
+        let logEnergySum = 0;
+        let totalSpectralFlux = 0;
+        let activeBinCount = 0;
+
         let kickFlux = 0;
         let snareFlux = 0;
-        const inv255 = 1.0 / 255.0;
 
-        // Sub-bass (Bins 1..3)
-        for (let i = 1; i <= 3; i++) {
-          const rawVal = dataArray[i] * inv255;
-          const val = rawVal * (0.85 + 0.15 * rawVal);
-          const flux = Math.max(0, rawVal - (prevDataArray ? prevDataArray[i] * inv255 : 0));
-          subSum += val;
-          kickFlux += flux * 1.6;
-        }
+        // 1. Calculate 18-Band Mel Energies & Spectral Descriptors
+        for (let b = 0; b < 18; b++) {
+          const def = BAND_DEFINITIONS[b];
+          let bandEnergy = 0;
+          const count = (def.end - def.start + 1);
 
-        // Kick Punch (Bins 4..12)
-        for (let i = 4; i <= 12; i++) {
-          const rawVal = dataArray[i] * inv255;
-          const val = rawVal * (0.85 + 0.15 * rawVal);
-          const flux = Math.max(0, rawVal - (prevDataArray ? prevDataArray[i] * inv255 : 0));
-          kickSum += val;
-          kickFlux += flux * 1.2;
-        }
+          for (let i = def.start; i <= def.end; i++) {
+            const rawVal = dataArray[i] * inv255;
+            const val = rawVal * (0.85 + 0.15 * rawVal);
+            bandEnergy += val;
 
-        // Low Mids (Bins 13..38)
-        for (let i = 13; i <= 38; i++) {
-          const rawVal = dataArray[i] * inv255;
-          lowMidSum += rawVal * (0.85 + 0.15 * rawVal);
-        }
+            const prevRaw = prevDataArray ? prevDataArray[i] * inv255 : 0;
+            const binFlux = Math.max(0, rawVal - prevRaw);
+            totalSpectralFlux += binFlux;
 
-        // Snare Attack & Body (Bins 39..116)
-        for (let i = 39; i <= 116; i++) {
-          const rawVal = dataArray[i] * inv255;
-          const val = rawVal * (0.85 + 0.15 * rawVal);
-          const flux = Math.max(0, rawVal - (prevDataArray ? prevDataArray[i] * inv255 : 0));
-          snareSum += val;
-          snareFlux += flux * 1.3;
-        }
+            // Kick flux in Bands 1..3
+            if (b >= 1 && b <= 3) {
+              kickFlux += binFlux * 1.4;
+            }
+            // Snare flux in Bands 8..11
+            if (b >= 8 && b <= 11) {
+              snareFlux += binFlux * 1.3;
+            }
 
-        // Presence (Bins 117..278 - sampled with step 2 for performance)
-        for (let i = 117; i <= 278; i += 2) {
-          const rawVal = dataArray[i] * inv255;
-          const val = rawVal * (0.85 + 0.15 * rawVal);
-          const flux = Math.max(0, rawVal - (prevDataArray ? prevDataArray[i] * inv255 : 0));
-          presSum += val * 2.0;
-          snareFlux += flux * 1.6;
-        }
+            // Spectral Centroid & Flatness accumulators
+            weightedFreqSum += i * rawVal;
+            totalEnergySum += rawVal;
+            logEnergySum += Math.log(Math.max(1e-5, rawVal));
+            activeBinCount++;
+          }
 
-        // Treble (Bins 279..557 - sampled with step 2)
-        for (let i = 279; i <= 557; i += 2) {
-          const rawVal = dataArray[i] * inv255;
-          trebSum += rawVal * (0.85 + 0.15 * rawVal) * 2.0;
-        }
-
-        // Air / Brilliance (Bins 558..930 - sampled with step 3)
-        for (let i = 558; i <= 930; i += 3) {
-          const rawVal = dataArray[i] * inv255;
-          airSum += rawVal * (0.85 + 0.15 * rawVal) * 3.0;
+          rawBands[b] = (bandEnergy / count) * def.weight;
         }
 
         if (prevDataArray && dataArray) {
           prevDataArray.set(dataArray);
         }
 
-        const gain = currentProps.sensitivity * 0.45;
-        subVal = (subSum / 3.0) * gain;
-        kickVal = (kickSum / 9.0) * gain;
-        lowMidVal = (lowMidSum / 26.0) * gain * 1.1;
-        snareVal = (snareSum / 78.0) * gain * 1.25;
-        presVal = (presSum / 162.0) * gain * 1.45;
-        trebVal = (trebSum / 279.0) * gain * 1.75;
-        airVal = (airSum / 373.0) * gain * 2.1;
+        // 2. Dynamic Auto-Gain Control (AGC) with smooth rolling window
+        const frameRms = totalEnergySum / Math.max(1, activeBinCount);
+        agcPeak = Math.max(0.12, Math.max(agcPeak * 0.9988, frameRms));
+        agcFloor = Math.min(agcFloor * 1.0015, frameRms * 0.4);
+        const dynamicSpread = Math.max(0.06, agcPeak - agcFloor);
+        const agcMultiplier = Math.min(3.8, 0.40 / dynamicSpread) * (currentProps.sensitivity * 0.5);
 
-        // Spectral Flux Adaptive Onset Detection (Acoustic Transient Tracking)
+        // Apply AGC to 18 bands
+        for (let b = 0; b < 18; b++) {
+          rawBands[b] = Math.min(1.4, rawBands[b] * agcMultiplier);
+        }
+
+        // 3. Timbral Feature Extraction
+        // Spectral Centroid (Normalized 0..1 mass balance)
+        const targetCentroid = totalEnergySum > 0.01 
+          ? Math.min(1.0, (weightedFreqSum / totalEnergySum) / 280.0) 
+          : 0.25;
+        smoothedCentroid += (targetCentroid - smoothedCentroid) * (1.0 - Math.exp(-12.0 * dt));
+
+        // Spectral Flatness (Wiener entropy: tonality vs noise)
+        const geomMean = Math.exp(logEnergySum / Math.max(1, activeBinCount));
+        const arithMean = totalEnergySum / Math.max(1, activeBinCount);
+        const targetFlatness = arithMean > 0.005 ? Math.min(1.0, geomMean / arithMean) : 0.15;
+        smoothedFlatness += (targetFlatness - smoothedFlatness) * (1.0 - Math.exp(-14.0 * dt));
+
+        // Spectral Flux transient energy
+        smoothedFlux += (totalSpectralFlux * 0.08 - smoothedFlux) * (1.0 - Math.exp(-24.0 * dt));
+
+        // 4. Adaptive Transient Beat Triggers
         kickFluxMean = kickFluxMean * 0.88 + kickFlux * 0.12;
         snareFluxMean = snareFluxMean * 0.88 + snareFlux * 0.12;
 
@@ -299,37 +342,32 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       kickTrigger *= Math.exp(-9.5 * dt);
       snareTrigger *= Math.exp(-9.5 * dt);
 
-      // Dynamic targets for all 7 frequency bands
-      const targetSub = Math.min(1.3, subVal);
-      const targetKick = Math.min(1.3, kickVal);
-      const targetMid = Math.min(1.3, lowMidVal);
-      const targetSnare = Math.min(1.3, snareVal);
-      const targetPres = Math.min(1.3, presVal);
-      const targetTreb = Math.min(1.3, trebVal);
-      const targetAir = Math.min(1.3, airVal);
+      // 5. Multi-Rate Exponential Envelope Followers per Band
+      for (let b = 0; b < 18; b++) {
+        const def = BAND_DEFINITIONS[b];
+        const target = rawBands[b];
+        const cur = smoothedBands[b];
+        const rate = target > cur ? def.attack : def.decay;
+        smoothedBands[b] = cur + (target - cur) * (1.0 - Math.exp(-rate * dt));
+      }
 
-      // Frame-rate independent dual-speed exponential smoothing (Instant Attack + Liquid Decay)
-      const expLerp = (cur: number, target: number, attackRate = 34.0, decayRate = 6.8) => {
-        const rate = target > cur ? attackRate : decayRate;
-        return cur + (target - cur) * (1.0 - Math.exp(-rate * dt));
-      };
+      // Composite backwards-compatible legacy bands
+      const smoothedSub = (smoothedBands[0] + smoothedBands[1]) * 0.5;
+      const smoothedKick = (smoothedBands[2] + smoothedBands[3]) * 0.5;
+      const smoothedMid = (smoothedBands[6] + smoothedBands[7] + smoothedBands[8]) / 3.0;
+      const smoothedSnare = (smoothedBands[9] + smoothedBands[10] + smoothedBands[11]) / 3.0;
+      const smoothedPres = (smoothedBands[12] + smoothedBands[13]) * 0.5;
+      const smoothedTreb = (smoothedBands[14] + smoothedBands[15]) * 0.5;
+      const smoothedAir = (smoothedBands[16] + smoothedBands[17]) * 0.5;
 
-      smoothedSub = expLerp(smoothedSub, targetSub, 36.0, 5.8);
-      smoothedKick = expLerp(smoothedKick, targetKick, 34.0, 6.2);
-      smoothedMid = expLerp(smoothedMid, targetMid, 30.0, 6.8);
-      smoothedSnare = expLerp(smoothedSnare, targetSnare, 32.0, 6.8);
-      smoothedPres = expLerp(smoothedPres, targetPres, 28.0, 7.2);
-      smoothedTreb = expLerp(smoothedTreb, targetTreb, 28.0, 7.2);
-      smoothedAir = expLerp(smoothedAir, targetAir, 28.0, 7.2);
-
-      smoothedLow = (smoothedSub * 0.5 + smoothedKick * 0.5);
-      smoothedHigh = (smoothedPres * 0.3 + smoothedTreb * 0.4 + smoothedAir * 0.3);
+      const smoothedLow = (smoothedSub * 0.5 + smoothedKick * 0.5);
+      const smoothedHigh = (smoothedPres * 0.3 + smoothedTreb * 0.4 + smoothedAir * 0.3);
 
       // Kinetic Audio Momentum / Phase Velocity Accumulator
       const kineticVelocity = 0.8 + smoothedKick * 1.8 + smoothedSub * 1.2 + kickTrigger * 0.8;
       audioTime += kineticVelocity * dt * currentProps.rotSpeed;
 
-      // Broadcast real-time audio metrics to isolated subscriber HUDs (~30 FPS)
+      // Broadcast real-time 18-band metrics to isolated subscriber HUDs (~30 FPS)
       if (nowMs - lastMetricsEmitTime >= 33) {
         lastMetricsEmitTime = nowMs;
         const metrics: AudioMetrics = {
@@ -343,7 +381,11 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
           isKickBeat,
           isSnareBeat,
           kickIntensity: kickTrigger,
-          snareIntensity: snareTrigger
+          snareIntensity: snareTrigger,
+          bands: Array.from(smoothedBands),
+          spectralCentroid: smoothedCentroid,
+          spectralFlatness: smoothedFlatness,
+          energyFlux: smoothedFlux
         };
         emitAudioMetrics(metrics);
         if (currentProps.onAudioMetricsUpdate) {
@@ -363,13 +405,27 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       gl.uniform1f(locs.u_audio_mid, smoothedMid);
       gl.uniform1f(locs.u_audio_high, smoothedHigh);
       
-      // Pass all 7 continuous metrics to WebGL shader
+      // Pass all continuous legacy metrics
       gl.uniform1f(locs.u_audio_sub, smoothedSub);
       gl.uniform1f(locs.u_audio_kick, smoothedKick);
       gl.uniform1f(locs.u_audio_snare, smoothedSnare);
       gl.uniform1f(locs.u_audio_pres, smoothedPres);
       gl.uniform1f(locs.u_audio_treb, smoothedTreb);
       gl.uniform1f(locs.u_audio_air, smoothedAir);
+
+      // Pass 18-band Mel spectrum & high-level acoustic descriptors
+      if (locs.u_bands) {
+        gl.uniform1fv(locs.u_bands, smoothedBands);
+      }
+      if (locs.u_spectral_centroid) {
+        gl.uniform1f(locs.u_spectral_centroid, smoothedCentroid);
+      }
+      if (locs.u_spectral_flatness) {
+        gl.uniform1f(locs.u_spectral_flatness, smoothedFlatness);
+      }
+      if (locs.u_energy_flux) {
+        gl.uniform1f(locs.u_energy_flux, smoothedFlux);
+      }
 
       gl.uniform1f(locs.u_beat_kick, kickTrigger);
       gl.uniform1f(locs.u_beat_snare, snareTrigger);
