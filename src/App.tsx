@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { Visualizer, AudioMetrics } from './components/Visualizer';
+import { Visualizer } from './components/Visualizer';
 import { Controls } from './components/Controls';
 import { BottomBar } from './components/BottomBar';
 import { OnboardingModal } from './components/OnboardingModal';
@@ -105,13 +105,6 @@ export default function App() {
     recordKeyframe({ glowIntensity: v });
   }, [recordKeyframe]);
 
-  // Real-Time Audio Metrics State
-  const [audioMetrics, setAudioMetrics] = useState<AudioMetrics | null>(null);
-
-  const handleAudioMetricsUpdate = useCallback((metrics: AudioMetrics) => {
-    setAudioMetrics(metrics);
-  }, []);
-
   const startRecording = useCallback(() => {
     startMediaRecording({
       geometryMode,
@@ -168,7 +161,6 @@ export default function App() {
         kaleidoscopeFolds={kaleidoscopeFolds}
         rotSpeed={rotSpeed}
         glowIntensity={glowIntensity}
-        onAudioMetricsUpdate={handleAudioMetricsUpdate}
       />
       
       {/* Top Header Logo */}
@@ -228,7 +220,6 @@ export default function App() {
         glowIntensity={glowIntensity}
         setGlowIntensity={setGlowIntensity}
         randomize={randomize}
-        audioMetrics={audioMetrics}
 
         isRecording={isRecording}
         recordingSeconds={recordingSeconds}

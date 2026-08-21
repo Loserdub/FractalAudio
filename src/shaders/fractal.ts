@@ -151,18 +151,18 @@ vec4 renderLiquidJulia2D(vec2 uv) {
     if (iter < maxIter) {
         float t = smooth_iter / float(maxIter);
         // Palette position drifting with Treble, Air, Presence, & Beats
-        float palettePos = t * 0.8 + u_audio_time * 0.03 + u_audio_treb * 0.5 + u_audio_air * 0.35 + u_audio_pres * 0.25;
+        float palettePos = t * 0.8 + u_audio_time * 0.03 + u_audio_treb * 0.35 + u_audio_air * 0.25 + u_audio_pres * 0.20;
         vec3 basePal = getDynamicPalette(palettePos, u_color_base.x);
         
-        // Luminance driven directly by Sub-bass, Kick, and Base Lightness
-        float light = clamp(0.12 + u_audio_sub * 0.40 + u_audio_kick * 0.45 + u_beat_kick * 0.30 + u_color_base.z * 0.35 * (1.0 - t), 0.05, 1.45);
-        color = basePal * light * (1.0 + u_glow_intensity * 0.45);
-        // High-frequency treble shimmer
-        color += basePal * (u_audio_treb * 0.65 + u_audio_air * 0.55 + u_beat_snare * 0.35) * pow(t, 0.7);
+        // Balanced luminance curve with anti-strobe clamping
+        float light = clamp(0.14 + u_audio_sub * 0.28 + u_audio_kick * 0.30 + u_beat_kick * 0.18 + u_color_base.z * 0.30 * (1.0 - t), 0.08, 1.25);
+        color = basePal * light * (1.0 + u_glow_intensity * 0.35);
+        // High-frequency treble shimmer with soft power response
+        color += basePal * (u_audio_treb * 0.38 + u_audio_air * 0.30 + u_beat_snare * 0.20) * pow(t, 0.7);
     } else {
-        // Core dark obsidian pulse driven by Sub-bass & Kick
-        float corePulse = 0.03 + u_audio_sub * 0.35 + u_audio_kick * 0.30 + u_beat_kick * 0.30;
-        vec3 coreColor = getDynamicPalette(u_color_base.x + u_audio_treb * 0.25, u_color_base.x);
+        // Core dark obsidian pulse driven gently by Sub-bass & Kick
+        float corePulse = 0.03 + u_audio_sub * 0.25 + u_audio_kick * 0.20 + u_beat_kick * 0.18;
+        vec3 coreColor = getDynamicPalette(u_color_base.x + u_audio_treb * 0.15, u_color_base.x);
         color = vec3(0.008, 0.012, 0.025) + coreColor * corePulse;
     }
 
@@ -171,26 +171,27 @@ vec4 renderLiquidJulia2D(vec2 uv) {
         vec2 grid = abs(fract(p * 2.0 - vec2(0.0, u_audio_time * 0.8 + u_audio_sub * 1.5)) - 0.5);
         float line = min(grid.x, grid.y);
         float gridGlow = smoothstep(0.06, 0.0, line);
-        vec3 gridCol = getDynamicPalette(u_audio_time * 0.02 + 0.3 + u_audio_kick * 0.3, u_color_base.x);
-        color += gridCol * gridGlow * 0.35 * (1.0 + u_audio_kick * 1.2 + u_audio_sub * 0.8);
+        vec3 gridCol = getDynamicPalette(u_audio_time * 0.02 + 0.3 + u_audio_kick * 0.2, u_color_base.x);
+        color += gridCol * gridGlow * 0.30 * (1.0 + u_audio_kick * 0.8 + u_audio_sub * 0.6);
     }
 
-    // FX Mode 2: Chromatic edge glitch & Snare transient hit
-    if (u_fx_mode == 2 || u_audio_snare > 0.35 || u_beat_snare > 0.35) {
-        color.r += (u_audio_snare * 0.18 + u_audio_treb * 0.14 + u_beat_snare * 0.18);
-        color.b += (u_audio_kick * 0.14 + u_audio_sub * 0.12 + u_beat_kick * 0.14);
+    // FX Mode 2: Soft chromatic edge warp (non-strobing)
+    if (u_fx_mode == 2 || u_audio_snare > 0.45 || u_beat_snare > 0.45) {
+        float snareWarp = (u_audio_snare * 0.08 + u_beat_snare * 0.08);
+        color = mix(color, color.brg, clamp(snareWarp, 0.0, 0.22));
     }
 
-    // FX Mode 3: Particle Dust / Starlight Flares
+    // FX Mode 3: Particle Dust / Anti-aliased Starlight Flares
     if (u_fx_mode == 3) {
         float particle = sin(uv.x * 60.0 + u_audio_time * 3.0) * cos(uv.y * 60.0 - u_audio_time * 2.0);
-        if (particle > 0.90) {
-            vec3 starCol = getDynamicPalette(particle + u_audio_time * 0.05 + u_audio_treb * 0.4, u_color_base.x);
-            color += starCol * (particle - 0.90) * 3.0 * (1.0 + u_audio_treb * 2.0 + u_audio_air * 1.5);
+        float pGlow = smoothstep(0.92, 0.99, particle);
+        if (pGlow > 0.0) {
+            vec3 starCol = getDynamicPalette(particle + u_audio_time * 0.05 + u_audio_treb * 0.3, u_color_base.x);
+            color += starCol * pGlow * 1.8 * (1.0 + u_audio_treb * 1.2 + u_audio_air * 0.8);
         }
     }
 
-    color = toneMapACES(color * (1.0 + u_audio_kick * 0.25 + u_beat_kick * 0.25));
+    color = toneMapACES(color * (1.0 + u_audio_kick * 0.12 + u_beat_kick * 0.12));
     return vec4(color, 1.0);
 }
 
@@ -362,15 +363,16 @@ float mapScene(vec3 p, out float trap) {
     return mapJulia3D(p, trap);
 }
 
-// Surface Normal Estimation via Gradient
+// Surface Normal Estimation via Tetrahedral Gradient (4 SDF evaluations instead of 6)
 vec3 calcNormal(vec3 p) {
     float dummy;
-    vec2 e = vec2(0.001, 0.0);
-    return normalize(vec3(
-        mapScene(p + e.xyy, dummy) - mapScene(p - e.xyy, dummy),
-        mapScene(p + e.yxy, dummy) - mapScene(p - e.yxy, dummy),
-        mapScene(p + e.yyx, dummy) - mapScene(p - e.yyx, dummy)
-    ));
+    const vec2 e = vec2(1.0, -1.0) * 0.001;
+    return normalize(
+        e.xyy * mapScene(p + e.xyy, dummy) +
+        e.yyx * mapScene(p + e.yyx, dummy) +
+        e.yxy * mapScene(p + e.yxy, dummy) +
+        e.xxx * mapScene(p + e.xxx, dummy)
+    );
 }
 
 // ----------------------------------------------------
@@ -387,20 +389,20 @@ void main() {
         return;
     }
     
-    if (u_fx_mode == 2 || u_audio_snare > 0.4 || u_beat_snare > 0.4) {
-        uv.x += sin(uv.y * 30.0 + u_audio_time * 8.0) * 0.008 * (u_audio_snare + u_audio_treb * 0.5 + u_beat_snare * 0.5);
+    if (u_fx_mode == 2 || u_audio_snare > 0.45 || u_beat_snare > 0.45) {
+        uv.x += sin(uv.y * 30.0 + u_audio_time * 8.0) * 0.006 * (u_audio_snare + u_audio_treb * 0.4 + u_beat_snare * 0.4);
     }
 
     uv = applyKaleidoscope(uv, u_kaleidoscope_folds);
 
-    // Camera distance pulsation driven continuously by Sub-bass & Kick punch
-    float camDist = 4.4 * u_zoom * (1.0 - u_audio_sub * 0.18 - u_audio_kick * 0.12 - u_beat_kick * 0.08);
-    float rotY = u_audio_time * 0.14 * u_rot_speed + u_offset.x * 3.0 + u_audio_mid * 0.6 + u_audio_snare * 0.25;
-    float rotX = u_offset.y * 3.0 + sin(u_audio_time * 0.12) * 0.2 + u_audio_sub * 0.18;
+    // Camera distance pulsation driven smoothly by Sub-bass & Kick punch
+    float camDist = 4.4 * u_zoom * (1.0 - u_audio_sub * 0.14 - u_audio_kick * 0.10 - u_beat_kick * 0.06);
+    float rotY = u_audio_time * 0.14 * u_rot_speed + u_offset.x * 3.0 + u_audio_mid * 0.5 + u_audio_snare * 0.20;
+    float rotX = u_offset.y * 3.0 + sin(u_audio_time * 0.12) * 0.2 + u_audio_sub * 0.15;
 
     vec3 ro = vec3(0.0, 0.0, -camDist);
     // Dynamic camera sway driven by Sub-bass energy
-    ro.xy += vec2(sin(u_audio_time * 0.5), cos(u_audio_time * 0.4)) * u_audio_sub * 0.25;
+    ro.xy += vec2(sin(u_audio_time * 0.5), cos(u_audio_time * 0.4)) * u_audio_sub * 0.20;
 
     mat3 rotM = rotateY(rotY) * rotateX(rotX);
     ro = rotM * ro;
@@ -414,18 +416,34 @@ void main() {
     bool hit = false;
     vec3 hitPos = vec3(0.0);
 
-    for (int i = 0; i < 96; i++) {
-        if (i >= u_iterations) break;
-        vec3 p = ro + rd * t;
-        float d = mapScene(p, trap);
-
-        if (d < minStep) {
-            hit = true;
-            hitPos = p;
-            break;
+    // Bounding sphere early-out acceleration for compact 3D geometries (modes 1 through 7)
+    bool skipMarch = false;
+    if (u_geometry_mode >= 1 && u_geometry_mode <= 7) {
+        float b = dot(ro, rd);
+        float c = dot(ro, ro) - 14.0; // R = ~3.74
+        float h = b * b - c;
+        if (h < 0.0 || (-b + sqrt(h)) < 0.0) {
+            skipMarch = true;
+        } else {
+            t = max(0.0, -b - sqrt(h));
+            maxDist = min(12.0, -b + sqrt(h));
         }
-        t += d * 0.75;
-        if (t > maxDist) break;
+    }
+
+    if (!skipMarch) {
+        for (int i = 0; i < 96; i++) {
+            if (i >= u_iterations) break;
+            vec3 p = ro + rd * t;
+            float d = mapScene(p, trap);
+
+            if (d < minStep) {
+                hit = true;
+                hitPos = p;
+                break;
+            }
+            t += d * 0.75;
+            if (t > maxDist) break;
+        }
     }
 
     // Rich, deep dark background base (Deep Obsidian / Dark Charcoal)
@@ -440,26 +458,26 @@ void main() {
         vec3 viewDir = normalize(ro - hitPos);
         vec3 halfDir = normalize(lightDir + viewDir);
         
-        // High-contrast specular and rim highlights modulated by Treble, Air, Presence, & Snare
-        float spec = pow(max(dot(normal, halfDir), 0.0), 24.0) * (0.3 + u_audio_treb * 2.0 + u_audio_air * 1.5 + u_audio_snare * 1.2);
-        float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 2.5) * (0.3 + u_audio_pres * 1.5 + u_audio_treb * 1.2);
+        // Smooth specular and rim highlights modulated safely by Treble, Air, & Snare
+        float spec = pow(max(dot(normal, halfDir), 0.0), 28.0) * (0.25 + u_audio_treb * 1.2 + u_audio_air * 0.9 + u_audio_snare * 0.7);
+        float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 2.5) * (0.25 + u_audio_pres * 1.0 + u_audio_treb * 0.8);
         
         // Palette position drift across all 7 bands with kinetic audio momentum
-        float palettePos = trap * 0.6 + u_audio_time * 0.025 + u_audio_treb * 0.5 + u_audio_air * 0.3 + u_audio_kick * 0.2;
+        float palettePos = trap * 0.6 + u_audio_time * 0.025 + u_audio_treb * 0.35 + u_audio_air * 0.25 + u_audio_kick * 0.15;
         vec3 baseRGB = getDynamicPalette(palettePos, u_color_base.x);
         
-        // Wide dynamic light intensity range driven continuously by Sub-bass & Kick
-        float lightIntensity = clamp(0.10 + diff * 0.55 * (1.0 + u_audio_sub * 0.7 + u_audio_kick * 0.7) + spec * 0.4 + u_audio_sub * 0.3, 0.05, 1.40);
+        // Stable dynamic light intensity curve with anti-strobe exposure limits
+        float lightIntensity = clamp(0.12 + diff * 0.50 * (1.0 + u_audio_sub * 0.45 + u_audio_kick * 0.45) + spec * 0.35 + u_audio_sub * 0.2, 0.08, 1.25);
         
-        finalColor = baseRGB * lightIntensity + vec3(spec * 0.5) + baseRGB * rim * 0.5 * u_glow_intensity;
+        finalColor = baseRGB * lightIntensity + vec3(spec * 0.35) + baseRGB * rim * 0.4 * u_glow_intensity;
         
         float fog = exp(-t * 0.18);
         finalColor = mix(bgBase, finalColor, fog);
     } else {
         // Vibrant background illumination pulsing with Sub-bass & Kick energy
-        float bgGlow = (1.0 - length(uv)) * (0.05 + u_audio_sub * 0.50 + u_audio_kick * 0.45);
-        vec3 palColor = getDynamicPalette(u_color_base.x + u_audio_treb * 0.2, u_color_base.x);
-        finalColor = bgBase + palColor * bgGlow * u_glow_intensity * 0.8;
+        float bgGlow = (1.0 - length(uv)) * (0.05 + u_audio_sub * 0.35 + u_audio_kick * 0.30);
+        vec3 palColor = getDynamicPalette(u_color_base.x + u_audio_treb * 0.15, u_color_base.x);
+        finalColor = bgBase + palColor * bgGlow * u_glow_intensity * 0.7;
     }
 
     // Cyber grid effect (FX Mode 1) - Beat reactive laser floor
@@ -472,29 +490,30 @@ void main() {
                 vec2 grid = abs(fract(pFloor.xz * 1.2 - vec2(0.0, u_audio_time * 1.2 + u_audio_sub * 2.5)) - 0.5);
                 float line = min(grid.x, grid.y);
                 float gridGlow = smoothstep(0.05, 0.0, line) * exp(-tFloor * 0.18);
-                vec3 gridCol = getDynamicPalette(u_audio_time * 0.015 + 0.3 + u_audio_kick * 0.3, u_color_base.x);
-                finalColor += gridCol * gridGlow * 0.55 * (1.0 + u_audio_kick * 1.5 + u_audio_sub * 1.0);
+                vec3 gridCol = getDynamicPalette(u_audio_time * 0.015 + 0.3 + u_audio_kick * 0.2, u_color_base.x);
+                finalColor += gridCol * gridGlow * 0.45 * (1.0 + u_audio_kick * 1.0 + u_audio_sub * 0.7);
             }
         }
     }
 
-    // Chromatic edge shift (FX Mode 2)
-    if (u_fx_mode == 2 || u_audio_treb > 0.3 || u_audio_snare > 0.3) {
-        finalColor.r += (u_audio_treb * 0.15 + u_audio_snare * 0.20);
-        finalColor.b += (u_audio_mid * 0.10 + u_audio_kick * 0.15);
+    // Chromatic subtle edge shift (FX Mode 2)
+    if (u_fx_mode == 2 || u_audio_treb > 0.45 || u_audio_snare > 0.45) {
+        float glitchWarp = (u_audio_treb * 0.08 + u_audio_snare * 0.08);
+        finalColor = mix(finalColor, finalColor.brg, clamp(glitchWarp, 0.0, 0.20));
     }
 
-    // Particle Dust / Star Flares (FX Mode 3)
+    // Particle Dust / Anti-aliased Star Flares (FX Mode 3)
     if (u_fx_mode == 3) {
         float particle = sin(uv.x * 60.0 + u_audio_time * 3.0) * cos(uv.y * 60.0 - u_audio_time * 2.0);
-        if (particle > 0.92) {
-            vec3 starCol = getDynamicPalette(particle + u_audio_time * 0.05 + u_audio_treb * 0.4, u_color_base.x);
-            finalColor += starCol * (particle - 0.92) * 2.5 * (1.0 + u_audio_treb * 2.0 + u_audio_air * 1.5);
+        float pGlow = smoothstep(0.92, 0.99, particle);
+        if (pGlow > 0.0) {
+            vec3 starCol = getDynamicPalette(particle + u_audio_time * 0.05 + u_audio_treb * 0.3, u_color_base.x);
+            finalColor += starCol * pGlow * 1.8 * (1.0 + u_audio_treb * 1.2 + u_audio_air * 0.8);
         }
     }
 
     // Refined ACES Filmic Tone Mapping with dynamic exposure kick
-    finalColor = toneMapACES(finalColor * (1.0 + u_audio_kick * 0.20 + u_beat_kick * 0.20));
+    finalColor = toneMapACES(finalColor * (1.0 + u_audio_kick * 0.12 + u_beat_kick * 0.12));
 
     gl_FragColor = vec4(finalColor, 1.0);
 }

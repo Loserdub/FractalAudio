@@ -1,8 +1,8 @@
-import React, { useState, useRef } from 'react';
-import { Settings, Mic, Upload, Music, Play, Pause, Volume2, VolumeX, ChevronUp, Shuffle, Box, Compass, Activity, Zap, Video, Camera, FileDown, Disc, Wand2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Settings, Mic, Upload, Music, Play, Pause, ChevronUp, Shuffle, Box, Compass, Activity, Zap, Video, Camera, FileDown, Disc, Wand2 } from 'lucide-react';
 import { JULIA_PRESETS } from '../constants';
 import { AudioMode } from '../hooks/useAudioAnalyzer';
-import { AudioMetrics } from './Visualizer';
+import { AudioMetrics, subscribeAudioMetrics } from './Visualizer';
 
 interface ControlsProps {
   audioMode: AudioMode;
@@ -55,6 +55,91 @@ const formatTime = (secs: number) => {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
+// Isolated Real-Time HUD Component - Prevents root Controls from re-rendering 30 times a second
+const AudioSpectrumHUD: React.FC = React.memo(() => {
+  const [metrics, setMetrics] = useState<AudioMetrics | null>(null);
+
+  useEffect(() => {
+    return subscribeAudioMetrics((newMetrics) => {
+      setMetrics(newMetrics);
+    });
+  }, []);
+
+  const kickIntensity = metrics?.kickIntensity || 0;
+  const snareIntensity = metrics?.snareIntensity || 0;
+
+  return (
+    <>
+      {/* REAL-TIME BEAT TRANSIENT HUD LAMPS */}
+      <div className="grid grid-cols-2 gap-2 pt-1">
+        <div 
+          className="py-1.5 px-2 rounded-lg border text-center transition-all duration-100 flex items-center justify-center gap-1.5"
+          style={{
+            backgroundColor: kickIntensity > 0.15 ? `rgba(163, 230, 53, ${0.15 + kickIntensity * 0.45})` : 'rgba(255, 255, 255, 0.03)',
+            borderColor: kickIntensity > 0.15 ? 'rgba(163, 230, 53, 0.8)' : 'rgba(255, 255, 255, 0.1)',
+            boxShadow: kickIntensity > 0.15 ? `0 0 ${kickIntensity * 20}px rgba(163, 230, 53, 0.6)` : 'none'
+          }}
+        >
+          <Zap size={12} className={kickIntensity > 0.15 ? 'text-lime-400 animate-pulse' : 'text-white/30'} />
+          <span className={`text-[10px] font-mono font-bold tracking-wider uppercase ${kickIntensity > 0.15 ? 'text-lime-400' : 'text-white/40'}`}>
+            KICK / PLOSIVE
+          </span>
+        </div>
+
+        <div 
+          className="py-1.5 px-2 rounded-lg border text-center transition-all duration-100 flex items-center justify-center gap-1.5"
+          style={{
+            backgroundColor: snareIntensity > 0.15 ? `rgba(56, 189, 248, ${0.15 + snareIntensity * 0.45})` : 'rgba(255, 255, 255, 0.03)',
+            borderColor: snareIntensity > 0.15 ? 'rgba(56, 189, 248, 0.8)' : 'rgba(255, 255, 255, 0.1)',
+            boxShadow: snareIntensity > 0.15 ? `0 0 ${snareIntensity * 20}px rgba(56, 189, 248, 0.6)` : 'none'
+          }}
+        >
+          <Activity size={12} className={snareIntensity > 0.15 ? 'text-sky-400 animate-pulse' : 'text-white/30'} />
+          <span className={`text-[10px] font-mono font-bold tracking-wider uppercase ${snareIntensity > 0.15 ? 'text-sky-400' : 'text-white/40'}`}>
+            SNARE / ATTACK
+          </span>
+        </div>
+      </div>
+
+      {/* REAL-TIME 7-BAND FFT SPECTRUM VISUALIZER */}
+      {metrics && (
+        <div className="space-y-1 pt-1">
+          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/40">
+            <span>Sub</span>
+            <span>Kick</span>
+            <span>Mid</span>
+            <span>Snare</span>
+            <span>Pres</span>
+            <span>Treb</span>
+            <span>Air</span>
+          </div>
+          <div className="flex items-end gap-1 h-8 bg-black/40 p-1 rounded-md border border-white/10">
+            {[
+              metrics.sub,
+              metrics.kick,
+              metrics.lowMid,
+              metrics.snare,
+              metrics.presence,
+              metrics.treble,
+              metrics.air,
+            ].map((val, idx) => (
+              <div key={idx} className="flex-1 bg-white/10 rounded-sm h-full flex items-end overflow-hidden">
+                <div 
+                  className="w-full transition-all duration-75 rounded-sm"
+                  style={{
+                    height: `${Math.min(100, Math.max(5, val * 100))}%`,
+                    backgroundColor: idx < 2 ? '#a3e635' : idx < 4 ? '#38bdf8' : '#c084fc'
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+});
+
 export const Controls: React.FC<ControlsProps> = React.memo(({
   audioMode,
   switchMode,
@@ -88,7 +173,6 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
   glowIntensity,
   setGlowIntensity,
   randomize,
-  audioMetrics,
 
   isRecording,
   recordingSeconds,
@@ -134,9 +218,6 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
     { folds: 12, label: '12-Fold' },
     { folds: 16, label: '16-Fold' },
   ];
-
-  const kickIntensity = audioMetrics?.kickIntensity || 0;
-  const snareIntensity = audioMetrics?.snareIntensity || 0;
 
   return (
     <div className="fixed top-4 right-4 z-10 flex flex-col items-end gap-2">
@@ -280,72 +361,8 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
               </button>
             </div>
 
-            {/* REAL-TIME BEAT TRANSIENT HUD LAMPS */}
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <div 
-                className="py-1.5 px-2 rounded-lg border text-center transition-all duration-100 flex items-center justify-center gap-1.5"
-                style={{
-                  backgroundColor: kickIntensity > 0.15 ? `rgba(163, 230, 53, ${0.15 + kickIntensity * 0.45})` : 'rgba(255, 255, 255, 0.03)',
-                  borderColor: kickIntensity > 0.15 ? 'rgba(163, 230, 53, 0.8)' : 'rgba(255, 255, 255, 0.1)',
-                  boxShadow: kickIntensity > 0.15 ? `0 0 ${kickIntensity * 20}px rgba(163, 230, 53, 0.6)` : 'none'
-                }}
-              >
-                <Zap size={12} className={kickIntensity > 0.15 ? 'text-lime-400 animate-pulse' : 'text-white/30'} />
-                <span className={`text-[10px] font-mono font-bold tracking-wider uppercase ${kickIntensity > 0.15 ? 'text-lime-400' : 'text-white/40'}`}>
-                  KICK / PLOSIVE
-                </span>
-              </div>
-
-              <div 
-                className="py-1.5 px-2 rounded-lg border text-center transition-all duration-100 flex items-center justify-center gap-1.5"
-                style={{
-                  backgroundColor: snareIntensity > 0.15 ? `rgba(56, 189, 248, ${0.15 + snareIntensity * 0.45})` : 'rgba(255, 255, 255, 0.03)',
-                  borderColor: snareIntensity > 0.15 ? 'rgba(56, 189, 248, 0.8)' : 'rgba(255, 255, 255, 0.1)',
-                  boxShadow: snareIntensity > 0.15 ? `0 0 ${snareIntensity * 20}px rgba(56, 189, 248, 0.6)` : 'none'
-                }}
-              >
-                <Activity size={12} className={snareIntensity > 0.15 ? 'text-sky-400 animate-pulse' : 'text-white/30'} />
-                <span className={`text-[10px] font-mono font-bold tracking-wider uppercase ${snareIntensity > 0.15 ? 'text-sky-400' : 'text-white/40'}`}>
-                  SNARE / ATTACK
-                </span>
-              </div>
-            </div>
-
-            {/* REAL-TIME 7-BAND FFT SPECTRUM VISUALIZER */}
-            {audioMetrics && (
-              <div className="space-y-1 pt-1">
-                <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/40">
-                  <span>Sub</span>
-                  <span>Kick</span>
-                  <span>Mid</span>
-                  <span>Snare</span>
-                  <span>Pres</span>
-                  <span>Treb</span>
-                  <span>Air</span>
-                </div>
-                <div className="flex items-end gap-1 h-8 bg-black/40 p-1 rounded-md border border-white/10">
-                  {[
-                    audioMetrics.sub,
-                    audioMetrics.kick,
-                    audioMetrics.lowMid,
-                    audioMetrics.snare,
-                    audioMetrics.presence,
-                    audioMetrics.treble,
-                    audioMetrics.air,
-                  ].map((val, idx) => (
-                    <div key={idx} className="flex-1 bg-white/10 rounded-sm h-full flex items-end overflow-hidden">
-                      <div 
-                        className="w-full transition-all duration-75 rounded-sm"
-                        style={{
-                          height: `${Math.min(100, Math.max(5, val * 100))}%`,
-                          backgroundColor: idx < 2 ? '#a3e635' : idx < 4 ? '#38bdf8' : '#c084fc'
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* ISOLATED SELF-SUBSCRIBED HUD */}
+            <AudioSpectrumHUD />
           </div>
 
           {/* GEOMETRY & FRACTAL OBJECTS SELECTOR */}

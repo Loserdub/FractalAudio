@@ -15,6 +15,21 @@ export interface AudioMetrics {
   snareIntensity: number;
 }
 
+// Lightweight listener subscription system to avoid root React state re-rendering
+type AudioMetricsCallback = (metrics: AudioMetrics) => void;
+const audioMetricsListeners = new Set<AudioMetricsCallback>();
+
+export const subscribeAudioMetrics = (callback: AudioMetricsCallback) => {
+  audioMetricsListeners.add(callback);
+  return () => {
+    audioMetricsListeners.delete(callback);
+  };
+};
+
+export const emitAudioMetrics = (metrics: AudioMetrics) => {
+  audioMetricsListeners.forEach((fn) => fn(metrics));
+};
+
 interface VisualizerProps {
   canvasRef?: React.RefObject<HTMLCanvasElement | null>;
   analyser: AnalyserNode | null;
@@ -128,11 +143,12 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_glow_intensity: gl.getUniformLocation(program, 'u_glow_intensity'),
     };
 
+    // DPR Clamping to prevent GPU fill-rate exhaustion on 4K / Retina screens
     const handleResize = () => {
       if (canvas && gl) {
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = window.innerWidth * dpr;
-        canvas.height = window.innerHeight * dpr;
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+        canvas.width = Math.floor(window.innerWidth * dpr);
+        canvas.height = Math.floor(window.innerHeight * dpr);
         gl.viewport(0, 0, canvas.width, canvas.height);
       }
     };
@@ -183,58 +199,72 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       if (currentProps.analyser) {
         if (!dataArray || dataArray.length !== currentProps.analyser.frequencyBinCount) {
           dataArray = new Uint8Array(currentProps.analyser.frequencyBinCount);
+          prevDataArray = new Uint8Array(currentProps.analyser.frequencyBinCount);
         }
         currentProps.analyser.getByteFrequencyData(dataArray);
 
         let subSum = 0, kickSum = 0, lowMidSum = 0, snareSum = 0, presSum = 0, trebSum = 0, airSum = 0;
         let kickFlux = 0;
         let snareFlux = 0;
+        const inv255 = 1.0 / 255.0;
 
-        for (let i = 1; i <= 930; i++) {
-          const rawVal = dataArray[i] / 255.0;
-          const val = Math.pow(rawVal, 1.1); // Dynamic power scaling preserving mid/high details
-          const prevRawVal = prevDataArray && i < prevDataArray.length ? prevDataArray[i] / 255.0 : 0;
-          const flux = Math.max(0, rawVal - prevRawVal);
-
-          // Logarithmic / Mel Frequency mapping (~44.1kHz / 2048 fft -> ~21.5Hz per bin):
-          // Sub-Bass (20Hz - 60Hz): Bins 1..3
-          if (i <= 3) {
-            subSum += val;
-            kickFlux += flux * 1.6;
-          }
-          // Kick / Bass Punch (60Hz - 250Hz): Bins 4..12
-          else if (i <= 12) {
-            kickSum += val;
-            kickFlux += flux * 1.2;
-          }
-          // Low Mids (250Hz - 800Hz): Bins 13..38
-          else if (i <= 38) {
-            lowMidSum += val;
-          }
-          // Snare / Body (800Hz - 2.5kHz): Bins 39..116
-          else if (i <= 116) {
-            snareSum += val;
-            snareFlux += flux * 1.3;
-          }
-          // Presence (2.5kHz - 6kHz): Bins 117..278
-          else if (i <= 278) {
-            presSum += val;
-            snareFlux += flux * 0.8;
-          }
-          // Treble (6kHz - 12kHz): Bins 279..557
-          else if (i <= 557) {
-            trebSum += val;
-          }
-          // Air / Brilliance (12kHz - 20kHz): Bins 558..930
-          else {
-            airSum += val;
-          }
+        // Sub-bass (Bins 1..3)
+        for (let i = 1; i <= 3; i++) {
+          const rawVal = dataArray[i] * inv255;
+          const val = rawVal * (0.85 + 0.15 * rawVal);
+          const flux = Math.max(0, rawVal - (prevDataArray ? prevDataArray[i] * inv255 : 0));
+          subSum += val;
+          kickFlux += flux * 1.6;
         }
 
-        if (!prevDataArray || prevDataArray.length !== dataArray.length) {
-          prevDataArray = new Uint8Array(dataArray.length);
+        // Kick Punch (Bins 4..12)
+        for (let i = 4; i <= 12; i++) {
+          const rawVal = dataArray[i] * inv255;
+          const val = rawVal * (0.85 + 0.15 * rawVal);
+          const flux = Math.max(0, rawVal - (prevDataArray ? prevDataArray[i] * inv255 : 0));
+          kickSum += val;
+          kickFlux += flux * 1.2;
         }
-        prevDataArray.set(dataArray);
+
+        // Low Mids (Bins 13..38)
+        for (let i = 13; i <= 38; i++) {
+          const rawVal = dataArray[i] * inv255;
+          lowMidSum += rawVal * (0.85 + 0.15 * rawVal);
+        }
+
+        // Snare Attack & Body (Bins 39..116)
+        for (let i = 39; i <= 116; i++) {
+          const rawVal = dataArray[i] * inv255;
+          const val = rawVal * (0.85 + 0.15 * rawVal);
+          const flux = Math.max(0, rawVal - (prevDataArray ? prevDataArray[i] * inv255 : 0));
+          snareSum += val;
+          snareFlux += flux * 1.3;
+        }
+
+        // Presence (Bins 117..278 - sampled with step 2 for performance)
+        for (let i = 117; i <= 278; i += 2) {
+          const rawVal = dataArray[i] * inv255;
+          const val = rawVal * (0.85 + 0.15 * rawVal);
+          const flux = Math.max(0, rawVal - (prevDataArray ? prevDataArray[i] * inv255 : 0));
+          presSum += val * 2.0;
+          snareFlux += flux * 1.6;
+        }
+
+        // Treble (Bins 279..557 - sampled with step 2)
+        for (let i = 279; i <= 557; i += 2) {
+          const rawVal = dataArray[i] * inv255;
+          trebSum += rawVal * (0.85 + 0.15 * rawVal) * 2.0;
+        }
+
+        // Air / Brilliance (Bins 558..930 - sampled with step 3)
+        for (let i = 558; i <= 930; i += 3) {
+          const rawVal = dataArray[i] * inv255;
+          airSum += rawVal * (0.85 + 0.15 * rawVal) * 3.0;
+        }
+
+        if (prevDataArray && dataArray) {
+          prevDataArray.set(dataArray);
+        }
 
         const gain = currentProps.sensitivity * 0.45;
         subVal = (subSum / 3.0) * gain;
@@ -299,10 +329,10 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       const kineticVelocity = 0.8 + smoothedKick * 1.8 + smoothedSub * 1.2 + kickTrigger * 0.8;
       audioTime += kineticVelocity * dt * currentProps.rotSpeed;
 
-      // Throttle React UI metrics updates to ~30 FPS (every 33ms) to prevent render churn
-      if (currentProps.onAudioMetricsUpdate && (nowMs - lastMetricsEmitTime >= 33)) {
+      // Broadcast real-time audio metrics to isolated subscriber HUDs (~30 FPS)
+      if (nowMs - lastMetricsEmitTime >= 33) {
         lastMetricsEmitTime = nowMs;
-        currentProps.onAudioMetricsUpdate({
+        const metrics: AudioMetrics = {
           sub: smoothedSub,
           kick: smoothedKick,
           lowMid: smoothedMid,
@@ -314,7 +344,11 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
           isSnareBeat,
           kickIntensity: kickTrigger,
           snareIntensity: snareTrigger
-        });
+        };
+        emitAudioMetrics(metrics);
+        if (currentProps.onAudioMetricsUpdate) {
+          currentProps.onAudioMetricsUpdate(metrics);
+        }
       }
 
       gl.uniform1f(locs.u_time, time);
@@ -353,9 +387,21 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
 
     requestRef.current = requestAnimationFrame(render);
 
+    // Complete WebGL Context Cleanup & Resource Deallocation on Unmount
     return () => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(requestRef.current);
+      if (gl) {
+        if (programRef.current) {
+          if (vertexShader) gl.detachShader(programRef.current, vertexShader);
+          if (fragmentShader) gl.detachShader(programRef.current, fragmentShader);
+          gl.deleteProgram(programRef.current);
+          programRef.current = null;
+        }
+        if (vertexShader) gl.deleteShader(vertexShader);
+        if (fragmentShader) gl.deleteShader(fragmentShader);
+        if (positionBuffer) gl.deleteBuffer(positionBuffer);
+      }
     };
   }, [canvasRef]);
 
