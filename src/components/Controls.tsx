@@ -140,13 +140,17 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
 
           {/* TIMBRAL DESCRIPTORS (CENTROID & FLATNESS) */}
           <div className="grid grid-cols-2 gap-2 pt-0.5 text-[9px] font-mono">
-            <div className="flex items-center justify-between px-2 py-1 rounded bg-white/5 border border-white/5">
-              <span className="text-white/40">Filter Brightness:</span>
-              <span className="text-amber-300 font-bold">{(centroid * 100).toFixed(0)}%</span>
+            <div className="flex items-center justify-between px-2 py-1 rounded bg-white/5 border border-white/5 min-w-0 overflow-hidden">
+              <span className="text-white/40 truncate mr-1" title="Filter Brightness (Centroid)">Filter:</span>
+              <span className="text-amber-300 font-bold tabular-nums w-10 text-right shrink-0">
+                {(centroid * 100).toFixed(0)}%
+              </span>
             </div>
-            <div className="flex items-center justify-between px-2 py-1 rounded bg-white/5 border border-white/5">
-              <span className="text-white/40">Tonality / Noise:</span>
-              <span className="text-sky-300 font-bold">{flatness < 0.3 ? 'Tonal' : flatness < 0.6 ? 'Balanced' : 'Noise'}</span>
+            <div className="flex items-center justify-between px-2 py-1 rounded bg-white/5 border border-white/5 min-w-0 overflow-hidden">
+              <span className="text-white/40 truncate mr-1" title="Tonality / Spectral Flatness">Tonality:</span>
+              <span className="text-sky-300 font-bold w-14 text-right shrink-0 truncate">
+                {flatness < 0.3 ? 'Tonal' : flatness < 0.6 ? 'Balanced' : 'Noise'}
+              </span>
             </div>
           </div>
         </div>

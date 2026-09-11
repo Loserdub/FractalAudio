@@ -172,7 +172,26 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_kaleidoscope_folds: gl.getUniformLocation(program, 'u_kaleidoscope_folds'),
       u_rot_speed: gl.getUniformLocation(program, 'u_rot_speed'),
       u_glow_intensity: gl.getUniformLocation(program, 'u_glow_intensity'),
+      u_lens_shock: gl.getUniformLocation(program, 'u_lens_shock'),
+      u_audio_history: gl.getUniformLocation(program, 'u_audio_history'),
     };
+
+    // 256x64 8-Bit Luminance Audio History Ring Buffer Texture (Power-of-Two WebGL 1.0)
+    const historyWidth = 256;
+    const historyHeight = 64;
+    const historyBuffer = new Uint8Array(historyWidth * historyHeight);
+
+    const audioTexture = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, audioTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.LUMINANCE, historyWidth, historyHeight, 0,
+      gl.LUMINANCE, gl.UNSIGNED_BYTE, historyBuffer
+    );
 
     // DPR Clamping to prevent GPU fill-rate exhaustion on 4K / Retina screens
     const handleResize = () => {
@@ -204,6 +223,13 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     // AGC (Automatic Gain Control) Dynamic Floor/Peak Normalizer
     let agcPeak = 0.40;
     let agcFloor = 0.01;
+
+    // Viscoelastic Damped Spring-Mass Simulation Variables
+    let camVelocity = 0.0;
+    let camSpring = 0.0; // Rest position = 0
+    const stiffness = 130.0; // Spring elasticity
+    const damping = 15.0;    // Viscous drag
+    let lensShock = 0.0;
 
     let lastKickTime = 0;
     let lastSnareTime = 0;
@@ -367,6 +393,43 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       const kineticVelocity = 0.8 + smoothedKick * 1.8 + smoothedSub * 1.2 + kickTrigger * 0.8;
       audioTime += kineticVelocity * dt * currentProps.rotSpeed;
 
+      // 6. Update 2D FFT History Ring Buffer Texture
+      historyBuffer.copyWithin(historyWidth, 0, historyWidth * (historyHeight - 1));
+      if (dataArray && dataArray.length > 0) {
+        const binStep = dataArray.length / historyWidth;
+        for (let i = 0; i < historyWidth; i++) {
+          const binIdx = Math.min(dataArray.length - 1, Math.floor(i * binStep));
+          historyBuffer[i] = dataArray[binIdx];
+        }
+      } else {
+        historyBuffer.fill(0, 0, historyWidth);
+      }
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, audioTexture);
+      gl.texImage2D(
+        gl.TEXTURE_2D, 0, gl.LUMINANCE, historyWidth, historyHeight, 0,
+        gl.LUMINANCE, gl.UNSIGNED_BYTE, historyBuffer
+      );
+      if (locs.u_audio_history) {
+        gl.uniform1i(locs.u_audio_history, 0);
+      }
+
+      // 7. Viscoelastic Camera Dynamics & Subwoofer Lens Shock Physics
+      if (isKickBeat) {
+        camVelocity -= (0.55 + kickTrigger * 0.70) * Math.max(0.4, currentProps.sensitivity * 0.5);
+        lensShock = Math.min(1.0, lensShock + 0.55);
+      }
+      lensShock *= Math.exp(-11.0 * dt);
+
+      // 2nd-order damped harmonic oscillator: F = -k*x - c*v
+      const springForce = -stiffness * camSpring - damping * camVelocity;
+      camVelocity += springForce * dt;
+      camSpring += camVelocity * dt;
+      // Clamp spring excursion to keep camera field of view stable
+      camSpring = Math.max(-0.4, Math.min(0.5, camSpring));
+
+      const effectiveZoom = currentProps.zoom * (1.0 + camSpring * 0.22);
+
       // Broadcast real-time 18-band metrics to isolated subscriber HUDs (~30 FPS)
       if (nowMs - lastMetricsEmitTime >= 33) {
         lastMetricsEmitTime = nowMs;
@@ -395,7 +458,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
 
       gl.uniform1f(locs.u_time, time);
       gl.uniform1f(locs.u_audio_time, audioTime);
-      gl.uniform1f(locs.u_zoom, currentProps.zoom);
+      gl.uniform1f(locs.u_zoom, Math.max(0.08, effectiveZoom));
       gl.uniform2f(locs.u_offset, currentProps.offsetX, currentProps.offsetY);
       gl.uniform2f(locs.u_c, currentProps.juliaC.x, currentProps.juliaC.y);
       gl.uniform1i(locs.u_iterations, currentProps.iterations);
@@ -429,6 +492,9 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
 
       gl.uniform1f(locs.u_beat_kick, kickTrigger);
       gl.uniform1f(locs.u_beat_snare, snareTrigger);
+      if (locs.u_lens_shock) {
+        gl.uniform1f(locs.u_lens_shock, lensShock);
+      }
 
       gl.uniform1i(locs.u_geometry_mode, currentProps.geometryMode);
       gl.uniform1i(locs.u_fx_mode, currentProps.fxMode);
@@ -457,6 +523,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         if (vertexShader) gl.deleteShader(vertexShader);
         if (fragmentShader) gl.deleteShader(fragmentShader);
         if (positionBuffer) gl.deleteBuffer(positionBuffer);
+        if (audioTexture) gl.deleteTexture(audioTexture);
       }
     };
   }, [canvasRef]);
