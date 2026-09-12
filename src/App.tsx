@@ -3,11 +3,22 @@ import { Visualizer } from './components/Visualizer';
 import { Controls } from './components/Controls';
 import { BottomBar } from './components/BottomBar';
 import { OnboardingModal } from './components/OnboardingModal';
+import { ArtistBanner, BannerConfig } from './components/ArtistBanner';
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer';
 import { useMediaRecorder } from './hooks/useMediaRecorder';
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Artist Branding Overlay State
+  const [bannerConfig, setBannerConfig] = useState<BannerConfig>({
+    enabled: false,
+    artistName: 'JUSTIN RAY',
+    subtitle: 'HYBRID PRODUCTION · 3D INK ENGINE',
+    font: 'font-notable',
+    position: 'bottom-left',
+    style: 'difference',
+  });
 
   const {
     audioMode,
@@ -26,7 +37,7 @@ export default function App() {
     audioStream
   } = useAudioAnalyzer();
 
-  // Media & Session Automation Recorder Hook
+  // Media & Session Automation Recorder Hook (with Artist Watermark Compositing)
   const {
     isRecording,
     recordingSeconds,
@@ -36,23 +47,23 @@ export default function App() {
     recordKeyframe,
     exportSessionJson,
     takeSnapshot
-  } = useMediaRecorder(canvasRef, audioStream);
+  } = useMediaRecorder(canvasRef, audioStream, bannerConfig);
 
-  // 3D Fractal Engine State
-  const [zoom, setZoomState] = useState(1.0);
+  // 3D Fractal Engine State (Calm, Hypnotic Club EDM Defaults)
+  const [zoom, setZoomState] = useState(1.05);
   const [offsetX, setOffsetX] = useState(0.0);
   const [offsetY, setOffsetY] = useState(0.0);
   const [iterations, setIterationsState] = useState(64);
-  const [colorBase, setColorBaseState] = useState({ h: 0.45, s: 0.8, l: 0.5 });
+  const [colorBase, setColorBaseState] = useState({ h: 0.60, s: 0.85, l: 0.40 }); // Cyber Cobalt
   const [juliaC, setJuliaCState] = useState({ x: -0.8, y: 0.156 });
-  const [sensitivity, setSensitivityState] = useState(1.8); // Balanced baseline sensitivity
+  const [sensitivity, setSensitivityState] = useState(1.4); // Balanced, calm reactivity
 
   // 3D Raymarching & Geometry States
   const [geometryMode, setGeometryModeState] = useState(3); // Default: 3D Ink Flow
   const [fxMode, setFxModeState] = useState(1); // Default: Cyber Laser Grid
   const [kaleidoscopeFolds, setKaleidoscopeFoldsState] = useState(6); // Default: 6-fold
-  const [rotSpeed, setRotSpeedState] = useState(1.0);
-  const [glowIntensity, setGlowIntensityState] = useState(1.5);
+  const [rotSpeed, setRotSpeedState] = useState(0.80); // Confident, rhythmic club motion speed
+  const [glowIntensity, setGlowIntensityState] = useState(1.2);
 
   // Parameter Change Wrappers for Recording Session Automation
   const setZoom = useCallback((v: number) => {
@@ -119,9 +130,11 @@ export default function App() {
   }, [startMediaRecording, geometryMode, fxMode, kaleidoscopeFolds, zoom, rotSpeed, glowIntensity, colorBase, juliaC]);
 
   const randomize = useCallback(() => {
-    const newJulia = { x: (Math.random() * 4 - 2), y: (Math.random() * 4 - 2) };
-    const newColor = { h: Math.random(), s: 0.6 + Math.random() * 0.4, l: 0.4 + Math.random() * 0.4 };
-    const newZoom = 0.6 + Math.random() * 1.8;
+    const newJulia = { x: (Math.random() * 3.2 - 1.6), y: (Math.random() * 3.2 - 1.6) };
+    const clubHues = [0.60, 0.78, 0.46, 0.55, 0.82];
+    const newHue = clubHues[Math.floor(Math.random() * clubHues.length)];
+    const newColor = { h: newHue, s: 0.85, l: 0.40 };
+    const newZoom = 0.85 + Math.random() * 0.5; // Well-bounded between 0.85 and 1.35
     const newMode = Math.floor(Math.random() * 9);
     const newFx = Math.floor(Math.random() * 4);
     const foldsOptions = [0, 4, 6, 8, 12, 16];
@@ -163,29 +176,32 @@ export default function App() {
         glowIntensity={glowIntensity}
       />
       
-      {/* Top Header Logo */}
-      <div className="absolute top-6 left-8 mix-blend-difference z-10">
+      {/* Top Header Logo (Restored Optical Translucent Color Inversion) */}
+      <div className="absolute top-6 left-8 mix-blend-difference z-10 select-none">
         <a 
           href="https://trustnodelogic.com" 
           target="_blank" 
           rel="noopener noreferrer"
           title="Trust Node Logic — https://trustnodelogic.com"
-          className="group flex items-center gap-3 hover:opacity-100 transition-opacity cursor-pointer"
+          className="group flex items-center gap-3 opacity-80 hover:opacity-100 transition-opacity cursor-pointer text-white"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="lucide lucide-disc animate-spin-slow text-lime-400 group-hover:text-white transition-colors flex-shrink-0"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-disc animate-spin-slow opacity-85 group-hover:opacity-100 transition-opacity flex-shrink-0 text-white"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="2"></circle></svg>
           <div>
-            <h1 className="text-3xl font-light tracking-tighter opacity-90 group-hover:opacity-100 transition-opacity flex items-center gap-2.5">
+            <h1 className="text-3xl font-light tracking-tighter opacity-90 group-hover:opacity-100 transition-opacity flex items-center gap-2.5 text-white">
               <span>Fractal<span className="font-bold">Audio</span></span>
               {isRecording && (
                 <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping inline-block" />
               )}
             </h1>
-            <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-lime-400/80 group-hover:text-lime-400 transition-colors pointer-events-none mt-0.5">
+            <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-white/60 group-hover:text-white/90 transition-colors pointer-events-none mt-0.5">
               TRUSTNODELOGIC · 3D INK ENGINE
             </p>
           </div>
         </a>
       </div>
+
+      {/* Customizable Artist Text Banner & Watermark */}
+      <ArtistBanner config={bannerConfig} />
 
       <Controls
         audioMode={audioMode}
@@ -228,6 +244,9 @@ export default function App() {
         stopRecording={stopRecording}
         takeSnapshot={takeSnapshot}
         exportSessionJson={exportSessionJson}
+
+        bannerConfig={bannerConfig}
+        setBannerConfig={setBannerConfig}
       />
 
       {/* Floating Lower-Center Quick Action Dock */}

@@ -3,3 +3,14 @@
 body {
   @apply bg-black;
 }
+
+.font-notable { font-family: 'Notable', sans-serif; }
+.font-lacquer { font-family: 'Lacquer', cursive; }
+.font-monoton { font-family: 'Monoton', cursive; }
+.font-baumans { font-family: 'Baumans', cursive; }
+.font-orbitron { font-family: 'Orbitron', sans-serif; }
+.font-syne { font-family: 'Syne', sans-serif; }
+.font-cinzel { font-family: 'Cinzel Decorative', serif; }
+.font-silkscreen { font-family: 'Silkscreen', monospace; }
+.font-glitch { font-family: 'Rubik Glitch', cursive; }
+.font-space { font-family: 'Space Grotesk', sans-serif; }

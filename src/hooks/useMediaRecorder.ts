@@ -1,17 +1,104 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { BannerConfig } from '../components/ArtistBanner';
 
 export interface SessionKeyframe {
   timestampSec: number;
   params: Record<string, any>;
 }
 
+const FONT_CSS_MAP: Record<string, string> = {
+  'font-notable': '"Notable", sans-serif',
+  'font-lacquer': '"Lacquer", cursive',
+  'font-monoton': '"Monoton", cursive',
+  'font-baumans': '"Baumans", cursive',
+  'font-orbitron': '"Orbitron", sans-serif',
+  'font-syne': '"Syne", sans-serif',
+  'font-cinzel': '"Cinzel Decorative", serif',
+  'font-silkscreen': '"Silkscreen", monospace',
+  'font-glitch': '"Rubik Glitch", cursive',
+  'font-space': '"Space Grotesk", sans-serif',
+};
+
+const drawArtistBannerOnCanvas = (ctx2d: CanvasRenderingContext2D, width: number, height: number, banner?: BannerConfig) => {
+  if (!banner || !banner.enabled || !banner.artistName.trim()) return;
+
+  ctx2d.save();
+  const artistText = banner.artistName.trim().toUpperCase();
+  const subtitleText = banner.subtitle.trim().toUpperCase();
+  const cssFont = FONT_CSS_MAP[banner.font] || '"Notable", sans-serif';
+
+  const isCenter = banner.position === 'center';
+  const fontSize = Math.max(16, Math.floor(height * (isCenter ? 0.065 : 0.035)));
+  const subSize = Math.max(9, Math.floor(fontSize * 0.32));
+
+  ctx2d.font = `normal ${fontSize}px ${cssFont}`;
+  ctx2d.shadowColor = 'rgba(0, 0, 0, 0.85)';
+  ctx2d.shadowBlur = 8;
+  ctx2d.shadowOffsetX = 1;
+  ctx2d.shadowOffsetY = 2;
+
+  let x = width * 0.05;
+  let y = height * 0.88;
+
+  if (banner.position === 'center') {
+    ctx2d.textAlign = 'center';
+    x = width * 0.5;
+    y = height * 0.5;
+  } else if (banner.position === 'top-center') {
+    ctx2d.textAlign = 'center';
+    x = width * 0.5;
+    y = height * 0.12;
+  } else if (banner.position === 'bottom-center') {
+    ctx2d.textAlign = 'center';
+    x = width * 0.5;
+    y = height * 0.88;
+  } else {
+    ctx2d.textAlign = 'left';
+    x = width * 0.05;
+    y = height * 0.88;
+  }
+
+  if (banner.style === 'glass') {
+    const textMetrics = ctx2d.measureText(artistText);
+    const boxW = textMetrics.width + fontSize * 1.5;
+    const boxH = fontSize * 1.8;
+    const bx = banner.position.includes('center') ? x - boxW / 2 : x - fontSize * 0.5;
+    const by = y - fontSize * 1.1;
+    ctx2d.fillStyle = 'rgba(10, 10, 15, 0.55)';
+    ctx2d.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx2d.lineWidth = 1.5;
+    ctx2d.beginPath();
+    ctx2d.roundRect(bx, by, boxW, boxH, 8);
+    ctx2d.fill();
+    ctx2d.stroke();
+  }
+
+  ctx2d.fillStyle = banner.style === 'neon' ? '#a3e635' : 'rgba(255, 255, 255, 0.95)';
+  ctx2d.fillText(artistText, x, y);
+
+  if (subtitleText) {
+    ctx2d.font = `600 ${subSize}px "Space Grotesk", sans-serif`;
+    ctx2d.fillStyle = 'rgba(255, 255, 255, 0.65)';
+    ctx2d.shadowBlur = 4;
+    ctx2d.fillText(subtitleText, x, y + subSize * 1.6);
+  }
+
+  ctx2d.restore();
+};
+
 export const useMediaRecorder = (
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
-  audioStream?: MediaStream | null
+  audioStream?: MediaStream | null,
+  bannerConfig?: BannerConfig
 ) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [hasSessionKeyframes, setHasSessionKeyframes] = useState(false);
+
+  const bannerConfigRef = useRef(bannerConfig);
+  useEffect(() => {
+    bannerConfigRef.current = bannerConfig;
+  }, [bannerConfig]);
 
   const isRecordingRef = useRef(false);
   useEffect(() => {
@@ -90,6 +177,9 @@ export const useMediaRecorder = (
         ctx2d.fillText('TRUSTNODELOGIC', x + fontSize * 0.9, y);
 
         ctx2d.restore();
+
+        // Draw Custom Artist Banner & Watermark if enabled
+        drawArtistBannerOnCanvas(ctx2d, watermarkCanvas.width, watermarkCanvas.height, bannerConfigRef.current);
 
         animFrameRef.current = requestAnimationFrame(drawWatermarkedFrame);
       };
@@ -249,6 +339,9 @@ export const useMediaRecorder = (
       ctx2d.fillText('⚡', x - 4, y);
       ctx2d.fillStyle = 'rgba(242, 242, 240, 0.9)';
       ctx2d.fillText('TRUSTNODELOGIC', x + fontSize * 0.9, y);
+
+      // Draw Custom Artist Banner & Watermark if enabled
+      drawArtistBannerOnCanvas(ctx2d, snapCanvas.width, snapCanvas.height, bannerConfigRef.current);
 
       const dataUrl = snapCanvas.toDataURL('image/png');
       const a = document.createElement('a');

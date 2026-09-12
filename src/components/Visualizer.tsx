@@ -389,8 +389,8 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       const smoothedLow = (smoothedSub * 0.5 + smoothedKick * 0.5);
       const smoothedHigh = (smoothedPres * 0.3 + smoothedTreb * 0.4 + smoothedAir * 0.3);
 
-      // Kinetic Audio Momentum / Phase Velocity Accumulator
-      const kineticVelocity = 0.8 + smoothedKick * 1.8 + smoothedSub * 1.2 + kickTrigger * 0.8;
+      // Kinetic Audio Momentum / Phase Velocity Accumulator (Confident, Responsive Club Flow)
+      const kineticVelocity = 0.50 + smoothedKick * 0.70 + smoothedSub * 0.50 + kickTrigger * 0.35;
       audioTime += kineticVelocity * dt * currentProps.rotSpeed;
 
       // 6. Update 2D FFT History Ring Buffer Texture
@@ -414,21 +414,21 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         gl.uniform1i(locs.u_audio_history, 0);
       }
 
-      // 7. Viscoelastic Camera Dynamics & Subwoofer Lens Shock Physics
+      // 7. Viscoelastic Camera Dynamics & Subwoofer Lens Shock Physics (Punchy, Bounded Breathing)
       if (isKickBeat) {
-        camVelocity -= (0.55 + kickTrigger * 0.70) * Math.max(0.4, currentProps.sensitivity * 0.5);
-        lensShock = Math.min(1.0, lensShock + 0.55);
+        camVelocity -= (0.26 + kickTrigger * 0.30) * Math.max(0.35, currentProps.sensitivity * 0.40);
+        lensShock = Math.min(0.70, lensShock + 0.35);
       }
-      lensShock *= Math.exp(-11.0 * dt);
+      lensShock *= Math.exp(-8.5 * dt);
 
       // 2nd-order damped harmonic oscillator: F = -k*x - c*v
       const springForce = -stiffness * camSpring - damping * camVelocity;
       camVelocity += springForce * dt;
       camSpring += camVelocity * dt;
-      // Clamp spring excursion to keep camera field of view stable
-      camSpring = Math.max(-0.4, Math.min(0.5, camSpring));
+      // Controlled camera excursion preventing geometry from blowing out of bounds
+      camSpring = Math.max(-0.40, Math.min(0.45, camSpring));
 
-      const effectiveZoom = currentProps.zoom * (1.0 + camSpring * 0.22);
+      const effectiveZoom = currentProps.zoom * (1.0 + camSpring * 0.12);
 
       // Broadcast real-time 18-band metrics to isolated subscriber HUDs (~30 FPS)
       if (nowMs - lastMetricsEmitTime >= 33) {
