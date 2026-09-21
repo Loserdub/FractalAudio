@@ -73,6 +73,7 @@ interface VisualizerProps {
   rotSpeed: number;
   glowIntensity: number;
   onAudioMetricsUpdate?: (metrics: AudioMetrics) => void;
+  onRenderFrame?: (canvas: HTMLCanvasElement) => void;
 }
 
 export const Visualizer: React.FC<VisualizerProps> = (props) => {
@@ -95,7 +96,11 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
+    const gl = canvas.getContext('webgl', {
+      preserveDrawingBuffer: false,
+      antialias: false,
+      powerPreference: 'high-performance'
+    });
     if (!gl) {
       console.error('WebGL not supported');
       return;
@@ -193,12 +198,19 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       gl.LUMINANCE, gl.UNSIGNED_BYTE, historyBuffer
     );
 
-    // DPR Clamping to prevent GPU fill-rate exhaustion on 4K / Retina screens
+    // DPR Clamping and Max Dimension Capping to prevent GPU fill-rate exhaustion on 1440p / 4K / Retina screens
     const handleResize = () => {
       if (canvas && gl) {
-        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-        canvas.width = Math.floor(window.innerWidth * dpr);
-        canvas.height = Math.floor(window.innerHeight * dpr);
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
+        const rawW = window.innerWidth * dpr;
+        const rawH = window.innerHeight * dpr;
+        
+        // Cap max rendering dimensions to 1080p equivalent (max 1920 width or 1080 height)
+        const maxDim = 1920;
+        const scale = Math.min(1.0, maxDim / Math.max(rawW, rawH));
+        
+        canvas.width = Math.max(320, Math.floor(rawW * scale));
+        canvas.height = Math.max(240, Math.floor(rawH * scale));
         gl.viewport(0, 0, canvas.width, canvas.height);
       }
     };
@@ -503,6 +515,10 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       gl.uniform1f(locs.u_glow_intensity, currentProps.glowIntensity);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+      if (propsRef.current.onRenderFrame && canvasRef.current) {
+        propsRef.current.onRenderFrame(canvasRef.current);
+      }
       
       requestRef.current = requestAnimationFrame(render);
     };

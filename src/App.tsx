@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Visualizer } from './components/Visualizer';
 import { Controls } from './components/Controls';
 import { BottomBar } from './components/BottomBar';
@@ -9,6 +9,52 @@ import { useMediaRecorder } from './hooks/useMediaRecorder';
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Fullscreen State and Keyboard Shortcut Management
+  const [isFullscreen, setIsFullscreen] = useState(() => !!document.fullscreenElement);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch((err) => {
+        console.error('Error attempting to enable fullscreen:', err);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch((err) => {
+          console.error('Error attempting to exit fullscreen:', err);
+        });
+      }
+    }
+  }, []);
+
+  // Keyboard shortcut: Press 'F' to toggle fullscreen
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [toggleFullscreen]);
 
   // Artist Branding Overlay State
   const [bannerConfig, setBannerConfig] = useState<BannerConfig>({
@@ -46,7 +92,8 @@ export default function App() {
     stopRecording,
     recordKeyframe,
     exportSessionJson,
-    takeSnapshot
+    takeSnapshot,
+    onRenderFrame
   } = useMediaRecorder(canvasRef, audioStream, bannerConfig);
 
   // 3D Fractal Engine State (Calm, Hypnotic Club EDM Defaults)
@@ -174,6 +221,7 @@ export default function App() {
         kaleidoscopeFolds={kaleidoscopeFolds}
         rotSpeed={rotSpeed}
         glowIntensity={glowIntensity}
+        onRenderFrame={onRenderFrame}
       />
       
       {/* Top Header Logo (Restored Optical Translucent Color Inversion) */}
@@ -247,6 +295,9 @@ export default function App() {
 
         bannerConfig={bannerConfig}
         setBannerConfig={setBannerConfig}
+
+        isFullscreen={isFullscreen}
+        toggleFullscreen={toggleFullscreen}
       />
 
       {/* Floating Lower-Center Quick Action Dock */}
@@ -263,6 +314,8 @@ export default function App() {
         startRecording={startRecording}
         stopRecording={stopRecording}
         takeSnapshot={takeSnapshot}
+        isFullscreen={isFullscreen}
+        toggleFullscreen={toggleFullscreen}
       />
 
       {/* First Visit Onboarding Modal */}

@@ -182,7 +182,7 @@ vec4 renderLiquidJulia2D(vec2 uv) {
     float smooth_iter = 0.0;
     
     // Adaptive iteration ceiling ensuring sharp filament details across all slider ranges
-    int maxIter = int(clamp(float(u_iterations) * 2.0, 48.0, 200.0));
+    int maxIter = int(clamp(float(u_iterations), 32.0, 128.0));
     
     for (int i = 0; i < 200; i++) {
         if (i >= maxIter) break;
@@ -285,7 +285,7 @@ float mapJulia3D(vec3 p, out float trap) {
     float dEst = (r2 > 1.0) ? (0.5 * sqrt(r2 / max(1e-4, dr2)) * log(r2)) : 0.0;
     float dBound = length(p) - 1.4;
     float dist = (dBound > 0.0) ? max(dBound * 0.7, dEst) : dEst;
-    return max(0.0001, dist) + getMicroDisplacement(p);
+    return max(0.0001, dist);
 }
 
 // 3D Mandelbulb SDF
@@ -316,7 +316,7 @@ float mapMandelbulb(vec3 p, out float trap) {
         w += p;
     }
     float dist = (r > 1.0) ? (0.5 * log(r) * r / max(1e-4, dr)) : 0.0;
-    return max(0.0001, dist) + getMicroDisplacement(p);
+    return max(0.0001, dist);
 }
 
 // 3D Organic Ink Flow / Fluid Dispersion SDF
@@ -333,7 +333,7 @@ float mapInkFlow(vec3 p, out float trap) {
     float dTendrils = sin(q.x * 2.6 + u_audio_time * 0.50) * cos(q.y * 2.6 + u_audio_mid * 0.8) * sin(q.z * 2.6 + u_audio_pres * 0.8) * (0.20 + u_audio_treb * 0.14 + u_audio_snare * 0.12);
     
     trap = length(q);
-    return max(0.0001, (dCore + dTendrils) * 0.65) + getMicroDisplacement(p);
+    return max(0.0001, (dCore + dTendrils) * 0.65);
 }
 
 // Sacred Sri Yantra Mandala SDF
@@ -350,7 +350,7 @@ float mapSriYantra(vec3 p, out float trap) {
     float tri = max(abs(q.x) * 0.866 + q.y * 0.5, -q.y) - (0.40 + u_audio_kick * 0.15 + u_audio_sub * 0.12);
     
     trap = r;
-    return (max(min(ring1, min(ring2, ring3)), abs(pScaled.z) - 0.10) / 1.4) + getMicroDisplacement(p);
+    return (max(min(ring1, min(ring2, ring3)), abs(pScaled.z) - 0.10) / 1.4);
 }
 
 // Metatron's Cube & Flower of Life SDF
@@ -364,7 +364,7 @@ float mapMetatronCube(vec3 p, out float trap) {
     float beam = length(vec2(length(pScaled.xy) - 0.55, pScaled.z)) - (0.02 + u_audio_mid * 0.05 + u_audio_treb * 0.04);
     
     trap = length(pScaled);
-    return (min(min(centerSphere, outerSpheres), beam) / 1.8) + getMicroDisplacement(p);
+    return (min(min(centerSphere, outerSpheres), beam) / 1.8);
 }
 
 // 3D Trefoil Torus Knot SDF
@@ -379,7 +379,7 @@ float mapTorusKnot(vec3 p, out float trap) {
     
     float knotD = length(cl - knotP) - (0.08 + u_audio_snare * 0.06 + u_audio_treb * 0.05);
     trap = r;
-    return (knotD / 1.5) + getMicroDisplacement(p);
+    return (knotD / 1.5);
 }
 
 // Cybernetic Prism Pyramid SDF
@@ -394,7 +394,7 @@ float mapPrismPyramid(vec3 p, out float trap) {
     float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) - (0.18 + u_audio_treb * 0.18 + u_audio_air * 0.12);
     
     trap = length(crystalP);
-    return (min(pyr, crystal) / 1.5) + getMicroDisplacement(p);
+    return (min(pyr, crystal) / 1.5);
 }
 
 // Infinite Cosmic Tunnel SDF with Temporal Shockwaves
@@ -406,20 +406,30 @@ float mapCosmicTunnel(vec3 p, out float trap) {
     float rib = abs(sin(p.z * 2.5 + u_audio_time * 1.2 + u_audio_sub * 1.8)) - (0.05 + u_audio_snare * 0.09 + u_audio_pres * 0.06);
     
     trap = r;
-    return max(tunnel, rib) + getMicroDisplacement(p);
+    return max(tunnel, rib);
 }
 
 // Master Scene Distance Evaluator
 float mapScene(vec3 p, out float trap) {
-    if (u_geometry_mode == 1) return mapMandelbulb(p, trap);
-    if (u_geometry_mode == 2) return mapJulia3D(p, trap);
-    if (u_geometry_mode == 3) return mapInkFlow(p, trap);
-    if (u_geometry_mode == 4) return mapSriYantra(p, trap);
-    if (u_geometry_mode == 5) return mapMetatronCube(p, trap);
-    if (u_geometry_mode == 6) return mapTorusKnot(p, trap);
-    if (u_geometry_mode == 7) return mapPrismPyramid(p, trap);
-    if (u_geometry_mode == 8) return mapCosmicTunnel(p, trap);
-    return mapJulia3D(p, trap);
+    float d = 0.0;
+    if (u_geometry_mode == 1) d = mapMandelbulb(p, trap);
+    else if (u_geometry_mode == 2) d = mapJulia3D(p, trap);
+    else if (u_geometry_mode == 3) d = mapInkFlow(p, trap);
+    else if (u_geometry_mode == 4) d = mapSriYantra(p, trap);
+    else if (u_geometry_mode == 5) d = mapMetatronCube(p, trap);
+    else if (u_geometry_mode == 6) d = mapTorusKnot(p, trap);
+    else if (u_geometry_mode == 7) d = mapPrismPyramid(p, trap);
+    else if (u_geometry_mode == 8) d = mapCosmicTunnel(p, trap);
+    else d = mapJulia3D(p, trap);
+
+    // Surface-only detail optimization:
+    // Only calculate expensive trigonometric micro-displacements and acoustic history
+    // texture2D lookups when approaching surface boundaries (d < 0.05).
+    // In empty space (d >= 0.05), skip it entirely!
+    if (d < 0.05) {
+        d += getMicroDisplacement(p);
+    }
+    return d;
 }
 
 // Surface Normal Estimation via Tetrahedral Gradient (4 SDF evaluations instead of 6)
@@ -481,8 +491,10 @@ void main() {
     bool hit = false;
     vec3 hitPos = vec3(0.0);
     vec3 volumetricMist = vec3(0.0);
+    float accumMist = 0.0;
+    float mistTrapSum = 0.0;
 
-    // Direct, robust raymarching loop with step relaxation
+    // Direct, robust raymarching loop with adaptive stepping
     for (int i = 0; i < 96; i++) {
         if (i >= u_iterations) break;
         vec3 p = ro + rd * t;
@@ -492,10 +504,10 @@ void main() {
         float haloRadius = 0.32 + u_audio_kick * 0.10;
         float density = clamp((haloRadius - d) / haloRadius, 0.0, 1.0);
         if (density > 0.0) {
-            // Volumetric emission tinted by dynamic palette and sub/mid resonance
-            vec3 mistCol = getDynamicPalette(trap * 0.4 + u_audio_time * 0.015 + float(i) * 0.005, u_color_base.x);
             float extinction = exp(-t * 0.14);
-            volumetricMist += mistCol * (density * density) * extinction * (0.03 + u_audio_sub * 0.04 + u_audio_mid * 0.025);
+            float weight = (density * density) * extinction;
+            accumMist += weight;
+            mistTrapSum += (trap * 0.4 + float(i) * 0.005) * weight;
         }
 
         if (d < minStep) {
@@ -503,8 +515,17 @@ void main() {
             hitPos = p;
             break;
         }
-        t += max(d * 0.55, 0.002);
+        // Adaptive step relaxation: faster traversal in open space, precision near surfaces
+        float stepFactor = (d > 0.08) ? 0.85 : 0.60;
+        t += max(d * stepFactor, 0.002);
         if (t > maxDist) break;
+    }
+
+    // Consolidated Volumetric Mist calculation: evaluate expensive palette once after raymarching
+    if (accumMist > 0.0) {
+        float avgTrap = mistTrapSum / max(1e-4, accumMist);
+        vec3 mistCol = getDynamicPalette(avgTrap + u_audio_time * 0.015, u_color_base.x);
+        volumetricMist = mistCol * accumMist * (0.03 + u_audio_sub * 0.04 + u_audio_mid * 0.025);
     }
 
     // Deep pitch obsidian background base for Club EDM aesthetic

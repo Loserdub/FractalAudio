@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Mic, MicOff, Upload, Play, Pause, Disc, Camera, Music, Sparkles } from 'lucide-react';
+import { Mic, MicOff, Upload, Play, Pause, Disc, Camera, Music, Sparkles, Maximize, Minimize } from 'lucide-react';
 import { AudioMode } from '../hooks/useAudioAnalyzer';
 
 interface BottomBarProps {
@@ -15,6 +15,8 @@ interface BottomBarProps {
   startRecording: () => void;
   stopRecording: () => void;
   takeSnapshot: () => void;
+  isFullscreen: boolean;
+  toggleFullscreen: () => void;
 }
 
 const formatTime = (secs: number) => {
@@ -37,6 +39,8 @@ export const BottomBar: React.FC<BottomBarProps> = React.memo(({
   startRecording,
   stopRecording,
   takeSnapshot,
+  isFullscreen,
+  toggleFullscreen,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -157,6 +161,19 @@ export const BottomBar: React.FC<BottomBarProps> = React.memo(({
           title="Take PNG Snapshot"
         >
           <Camera size={16} />
+        </button>
+
+        {/* 7. FULLSCREEN TOGGLE BUTTON */}
+        <button
+          onClick={toggleFullscreen}
+          className={`p-2 rounded-full transition-all border ${
+            isFullscreen
+              ? 'bg-lime-400 text-black border-lime-400 hover:bg-lime-300 shadow-md'
+              : 'bg-white/10 hover:bg-white/20 text-white border-white/10'
+          }`}
+          title={isFullscreen ? "Exit Fullscreen (F)" : "Enter Fullscreen (F)"}
+        >
+          {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
         </button>
 
       </div>

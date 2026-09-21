@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Mic, Upload, Music, Play, Pause, ChevronUp, Shuffle, Box, Compass, Activity, Zap, Video, Camera, FileDown, Disc, Wand2, Type, HelpCircle, Gauge } from 'lucide-react';
+import { Settings, Mic, Upload, Music, Play, Pause, ChevronUp, Shuffle, Box, Compass, Activity, Zap, Video, Camera, FileDown, Disc, Wand2, Type, HelpCircle, Gauge, Maximize, Minimize } from 'lucide-react';
 import { JULIA_PRESETS } from '../constants';
 import { AudioMode } from '../hooks/useAudioAnalyzer';
 import { AudioMetrics, subscribeAudioMetrics } from './Visualizer';
 import { BannerConfig, FONT_OPTIONS } from './ArtistBanner';
 
 interface ControlsProps {
+  isFullscreen?: boolean;
+  toggleFullscreen?: () => void;
   audioMode: AudioMode;
   switchMode: (mode: AudioMode) => void;
   isPlaying: boolean;
@@ -207,6 +209,8 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
   bannerConfig,
   setBannerConfig,
+  isFullscreen,
+  toggleFullscreen,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -247,15 +251,32 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
   return (
     <div className="fixed top-4 right-4 z-10 flex flex-col items-end gap-2">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="bg-black/60 backdrop-blur-md p-2.5 rounded-full text-white hover:bg-white/10 transition-colors border border-white/15 shadow-xl flex items-center gap-2"
-      >
-        {isRecording && (
-          <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+      <div className="flex items-center gap-2">
+        {toggleFullscreen && (
+          <button
+            onClick={toggleFullscreen}
+            className={`p-2.5 rounded-full transition-all border shadow-xl flex items-center justify-center ${
+              isFullscreen
+                ? 'bg-lime-400 text-black border-lime-400 hover:bg-lime-300 shadow-[0_0_12px_rgba(163,230,53,0.4)]'
+                : 'bg-black/60 backdrop-blur-md text-white hover:bg-white/10 border-white/15'
+            }`}
+            title={isFullscreen ? "Exit Fullscreen (F)" : "Enter Fullscreen (F)"}
+          >
+            {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+          </button>
         )}
-        {isOpen ? <ChevronUp size={20} /> : <Settings size={20} />}
-      </button>
+
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="bg-black/60 backdrop-blur-md p-2.5 rounded-full text-white hover:bg-white/10 transition-colors border border-white/15 shadow-xl flex items-center gap-2"
+          title={isOpen ? "Collapse Controls" : "Open Controls"}
+        >
+          {isRecording && (
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+          )}
+          {isOpen ? <ChevronUp size={20} /> : <Settings size={20} />}
+        </button>
+      </div>
 
       {isOpen && (
         <div className="bg-black/80 backdrop-blur-2xl p-6 rounded-2xl border border-white/15 w-84 sm:w-96 shadow-2xl text-white/90 max-h-[85vh] overflow-y-auto space-y-6">

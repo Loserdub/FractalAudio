@@ -108,11 +108,86 @@ export const useMediaRecorder = (
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
-  const animFrameRef = useRef<number | null>(null);
   const startTimeRef = useRef<number>(0);
+
+  // Synchronized offscreen watermark canvas for video recording
+  const watermarkCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const watermarkCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const snapshotRequestedRef = useRef<boolean>(false);
 
   // Session Automation Timeline
   const keyframesRef = useRef<SessionKeyframe[]>([]);
+
+  // Shared Watermark & Artist Banner Drawing Routine
+  const drawWatermarkOverlay = useCallback((ctx2d: CanvasRenderingContext2D, width: number, height: number) => {
+    ctx2d.save();
+    const fontSize = Math.max(12, Math.floor(height * 0.018));
+    ctx2d.font = `600 ${fontSize}px "IBM Plex Mono", monospace`;
+    ctx2d.fillStyle = 'rgba(255, 255, 255, 0.75)';
+    ctx2d.shadowColor = 'rgba(0, 0, 0, 0.85)';
+    ctx2d.shadowBlur = 6;
+    ctx2d.shadowOffsetX = 1;
+    ctx2d.shadowOffsetY = 1;
+
+    const text = '⚡ TRUSTNODELOGIC';
+    const textMetrics = ctx2d.measureText(text);
+    const padding = fontSize * 1.2;
+    const x = width - textMetrics.width - padding;
+    const y = height - padding;
+
+    // Subtle dark background pill behind watermark for extra contrast
+    ctx2d.fillStyle = 'rgba(9, 10, 13, 0.65)';
+    ctx2d.beginPath();
+    ctx2d.roundRect(x - 8, y - fontSize, textMetrics.width + 16, fontSize + 8, 4);
+    ctx2d.fill();
+
+    // Watermark Text
+    ctx2d.fillStyle = '#a3e635'; // Acid Green accent
+    ctx2d.fillText('⚡', x - 4, y);
+    ctx2d.fillStyle = 'rgba(242, 242, 240, 0.9)';
+    ctx2d.fillText('TRUSTNODELOGIC', x + fontSize * 0.9, y);
+
+    ctx2d.restore();
+
+    // Draw Custom Artist Banner & Watermark if enabled
+    drawArtistBannerOnCanvas(ctx2d, width, height, bannerConfigRef.current);
+  }, []);
+
+  // SYNCHRONIZED FRAME RENDER HOOK (Directly called right after gl.drawArrays before buffer discard)
+  const onRenderFrame = useCallback((canvas: HTMLCanvasElement) => {
+    // 1. High-Res PNG Snapshot Capture
+    if (snapshotRequestedRef.current) {
+      snapshotRequestedRef.current = false;
+      try {
+        const snapCanvas = document.createElement('canvas');
+        snapCanvas.width = canvas.width;
+        snapCanvas.height = canvas.height;
+        const ctx2d = snapCanvas.getContext('2d');
+        if (ctx2d) {
+          ctx2d.drawImage(canvas, 0, 0);
+          drawWatermarkOverlay(ctx2d, snapCanvas.width, snapCanvas.height);
+          const dataUrl = snapCanvas.toDataURL('image/png');
+          const a = document.createElement('a');
+          a.href = dataUrl;
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          a.download = `FractalAudio_TRUSTNODELOGIC_${timestamp}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+      } catch (err) {
+        console.error('Error capturing canvas snapshot:', err);
+      }
+    }
+
+    // 2. Real-Time Video Recording Frame Compositor
+    if (isRecordingRef.current && watermarkCtxRef.current && watermarkCanvasRef.current) {
+      const ctx2d = watermarkCtxRef.current;
+      const wCanvas = watermarkCanvasRef.current;
+      ctx2d.drawImage(canvas, 0, 0, wCanvas.width, wCanvas.height);
+      drawWatermarkOverlay(ctx2d, wCanvas.width, wCanvas.height);
+    }
+  }, [drawWatermarkOverlay]);
 
   // 1. START RECORDING (WITH TRUSTNODELOGIC WATERMARK BURN-IN)
   const startRecording = useCallback((initialParams?: Record<string, any>) => {
@@ -140,51 +215,14 @@ export const useMediaRecorder = (
       watermarkCanvas.width = canvas.width;
       watermarkCanvas.height = canvas.height;
       const ctx2d = watermarkCanvas.getContext('2d');
+      if (!ctx2d) return;
 
-      // Frame compositor loop to burn watermark into 60FPS video stream
-      const drawWatermarkedFrame = () => {
-        if (!ctx2d || !canvas) return;
+      watermarkCanvasRef.current = watermarkCanvas;
+      watermarkCtxRef.current = ctx2d;
 
-        // Draw WebGL Canvas frame
-        ctx2d.drawImage(canvas, 0, 0);
-
-        // Draw Small TRUSTNODELOGIC Watermark in Bottom-Right Corner
-        ctx2d.save();
-        const fontSize = Math.max(12, Math.floor(watermarkCanvas.height * 0.018));
-        ctx2d.font = `600 ${fontSize}px "IBM Plex Mono", monospace`;
-        ctx2d.fillStyle = 'rgba(255, 255, 255, 0.75)';
-        ctx2d.shadowColor = 'rgba(0, 0, 0, 0.85)';
-        ctx2d.shadowBlur = 6;
-        ctx2d.shadowOffsetX = 1;
-        ctx2d.shadowOffsetY = 1;
-
-        const text = '⚡ TRUSTNODELOGIC';
-        const textMetrics = ctx2d.measureText(text);
-        const padding = fontSize * 1.2;
-        const x = watermarkCanvas.width - textMetrics.width - padding;
-        const y = watermarkCanvas.height - padding;
-
-        // Subtle dark background pill behind watermark for extra contrast
-        ctx2d.fillStyle = 'rgba(9, 10, 13, 0.65)';
-        ctx2d.beginPath();
-        ctx2d.roundRect(x - 8, y - fontSize, textMetrics.width + 16, fontSize + 8, 4);
-        ctx2d.fill();
-
-        // Watermark Text
-        ctx2d.fillStyle = '#a3e635'; // Acid Green accent
-        ctx2d.fillText('⚡', x - 4, y);
-        ctx2d.fillStyle = 'rgba(242, 242, 240, 0.9)';
-        ctx2d.fillText('TRUSTNODELOGIC', x + fontSize * 0.9, y);
-
-        ctx2d.restore();
-
-        // Draw Custom Artist Banner & Watermark if enabled
-        drawArtistBannerOnCanvas(ctx2d, watermarkCanvas.width, watermarkCanvas.height, bannerConfigRef.current);
-
-        animFrameRef.current = requestAnimationFrame(drawWatermarkedFrame);
-      };
-
-      drawWatermarkedFrame();
+      // Initialize with current canvas frame
+      ctx2d.drawImage(canvas, 0, 0);
+      drawWatermarkOverlay(ctx2d, watermarkCanvas.width, watermarkCanvas.height);
 
       // Capture 60FPS Video Stream from Watermarked Composite Canvas
       const videoStream = watermarkCanvas.captureStream(60);
@@ -218,10 +256,8 @@ export const useMediaRecorder = (
       };
 
       recorder.onstop = () => {
-        if (animFrameRef.current) {
-          cancelAnimationFrame(animFrameRef.current);
-          animFrameRef.current = null;
-        }
+        watermarkCanvasRef.current = null;
+        watermarkCtxRef.current = null;
 
         const blob = new Blob(recordedChunksRef.current, { type: mimeType });
         const url = URL.createObjectURL(blob);
@@ -251,7 +287,7 @@ export const useMediaRecorder = (
     } catch (err) {
       console.error('Error starting video recording:', err);
     }
-  }, [canvasRef, audioStream]);
+  }, [canvasRef, audioStream, drawWatermarkOverlay]);
 
   // 2. STOP RECORDING
   const stopRecording = useCallback(() => {
@@ -262,10 +298,8 @@ export const useMediaRecorder = (
       window.clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    if (animFrameRef.current) {
-      cancelAnimationFrame(animFrameRef.current);
-      animFrameRef.current = null;
-    }
+    watermarkCanvasRef.current = null;
+    watermarkCtxRef.current = null;
     setIsRecording(false);
   }, []);
 
@@ -304,62 +338,14 @@ export const useMediaRecorder = (
     URL.revokeObjectURL(url);
   }, []);
 
-  // 5. TAKE HIGH-RES PNG SNAPSHOT (WITH TRUSTNODELOGIC WATERMARK)
+  // 5. TAKE HIGH-RES PNG SNAPSHOT (Flags next frame render for zero-copy capture)
   const takeSnapshot = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    try {
-      const snapCanvas = document.createElement('canvas');
-      snapCanvas.width = canvas.width;
-      snapCanvas.height = canvas.height;
-      const ctx2d = snapCanvas.getContext('2d');
-      if (!ctx2d) return;
-
-      // Draw WebGL Canvas frame
-      ctx2d.drawImage(canvas, 0, 0);
-
-      // Draw TRUSTNODELOGIC Watermark
-      const fontSize = Math.max(14, Math.floor(snapCanvas.height * 0.018));
-      ctx2d.font = `600 ${fontSize}px "IBM Plex Mono", monospace`;
-      ctx2d.shadowColor = 'rgba(0, 0, 0, 0.85)';
-      ctx2d.shadowBlur = 6;
-      
-      const text = '⚡ TRUSTNODELOGIC';
-      const textMetrics = ctx2d.measureText(text);
-      const padding = fontSize * 1.2;
-      const x = snapCanvas.width - textMetrics.width - padding;
-      const y = snapCanvas.height - padding;
-
-      ctx2d.fillStyle = 'rgba(9, 10, 13, 0.7)';
-      ctx2d.beginPath();
-      ctx2d.roundRect(x - 8, y - fontSize, textMetrics.width + 16, fontSize + 8, 4);
-      ctx2d.fill();
-
-      ctx2d.fillStyle = '#a3e635';
-      ctx2d.fillText('⚡', x - 4, y);
-      ctx2d.fillStyle = 'rgba(242, 242, 240, 0.9)';
-      ctx2d.fillText('TRUSTNODELOGIC', x + fontSize * 0.9, y);
-
-      // Draw Custom Artist Banner & Watermark if enabled
-      drawArtistBannerOnCanvas(ctx2d, snapCanvas.width, snapCanvas.height, bannerConfigRef.current);
-
-      const dataUrl = snapCanvas.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = dataUrl;
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      a.download = `FractalAudio_TRUSTNODELOGIC_${timestamp}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } catch (err) {
-      console.error('Error capturing canvas snapshot:', err);
-    }
-  }, [canvasRef]);
+    snapshotRequestedRef.current = true;
+  }, []);
 
   useEffect(() => {
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current);
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     };
   }, []);
 
@@ -371,6 +357,7 @@ export const useMediaRecorder = (
     stopRecording,
     recordKeyframe,
     exportSessionJson,
-    takeSnapshot
+    takeSnapshot,
+    onRenderFrame
   };
 };
