@@ -179,12 +179,14 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_glow_intensity: gl.getUniformLocation(program, 'u_glow_intensity'),
       u_lens_shock: gl.getUniformLocation(program, 'u_lens_shock'),
       u_audio_history: gl.getUniformLocation(program, 'u_audio_history'),
+      u_history_offset: gl.getUniformLocation(program, 'u_history_offset'),
     };
 
-    // 256x64 8-Bit Luminance Audio History Ring Buffer Texture (Power-of-Two WebGL 1.0)
+    // 256x64 8-Bit Luminance Audio History Circular Ring Buffer Texture (Power-of-Two WebGL 1.0)
     const historyWidth = 256;
     const historyHeight = 64;
-    const historyBuffer = new Uint8Array(historyWidth * historyHeight);
+    const singleRowBuffer = new Uint8Array(historyWidth);
+    let historyHead = 0;
 
     const audioTexture = gl.createTexture();
     gl.activeTexture(gl.TEXTURE0);
@@ -192,10 +194,10 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
     gl.texImage2D(
       gl.TEXTURE_2D, 0, gl.LUMINANCE, historyWidth, historyHeight, 0,
-      gl.LUMINANCE, gl.UNSIGNED_BYTE, historyBuffer
+      gl.LUMINANCE, gl.UNSIGNED_BYTE, new Uint8Array(historyWidth * historyHeight)
     );
 
     // DPR Clamping and Max Dimension Capping to prevent GPU fill-rate exhaustion on 1440p / 4K / Retina screens
@@ -405,25 +407,28 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       const kineticVelocity = 0.50 + smoothedKick * 0.70 + smoothedSub * 0.50 + kickTrigger * 0.35;
       audioTime += kineticVelocity * dt * currentProps.rotSpeed;
 
-      // 6. Update 2D FFT History Ring Buffer Texture
-      historyBuffer.copyWithin(historyWidth, 0, historyWidth * (historyHeight - 1));
+      // 6. Update 2D FFT History Ring Buffer Texture via texSubImage2D (64x bandwidth reduction)
+      historyHead = (historyHead + 1) % historyHeight;
       if (dataArray && dataArray.length > 0) {
         const binStep = dataArray.length / historyWidth;
         for (let i = 0; i < historyWidth; i++) {
           const binIdx = Math.min(dataArray.length - 1, Math.floor(i * binStep));
-          historyBuffer[i] = dataArray[binIdx];
+          singleRowBuffer[i] = dataArray[binIdx];
         }
       } else {
-        historyBuffer.fill(0, 0, historyWidth);
+        singleRowBuffer.fill(0);
       }
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, audioTexture);
-      gl.texImage2D(
-        gl.TEXTURE_2D, 0, gl.LUMINANCE, historyWidth, historyHeight, 0,
-        gl.LUMINANCE, gl.UNSIGNED_BYTE, historyBuffer
+      gl.texSubImage2D(
+        gl.TEXTURE_2D, 0, 0, historyHead, historyWidth, 1,
+        gl.LUMINANCE, gl.UNSIGNED_BYTE, singleRowBuffer
       );
       if (locs.u_audio_history) {
         gl.uniform1i(locs.u_audio_history, 0);
+      }
+      if (locs.u_history_offset) {
+        gl.uniform1f(locs.u_history_offset, historyHead / historyHeight);
       }
 
       // 7. Viscoelastic Camera Dynamics & Subwoofer Lens Shock Physics (Punchy, Bounded Breathing)

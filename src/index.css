@@ -1,7 +1,39 @@
 @import "tailwindcss";
 
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Ensure the app truly fills the native fullscreen viewport */
+:fullscreen html,
+:fullscreen body,
+:fullscreen #root {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+:-webkit-full-screen html,
+:-webkit-full-screen body,
+:-webkit-full-screen #root {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
 body {
   @apply bg-black;
+}
+
+/* Ensure canvas and root elements expand inside fullscreen host */
+:fullscreen > div,
+:-webkit-full-screen > div {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .font-notable { font-family: 'Notable', sans-serif; }
@@ -14,3 +46,11 @@ body {
 .font-silkscreen { font-family: 'Silkscreen', monospace; }
 .font-glitch { font-family: 'Rubik Glitch', cursive; }
 .font-space { font-family: 'Space Grotesk', sans-serif; }
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}

@@ -77,16 +77,39 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
   const centroid = metrics?.spectralCentroid || 0.3;
   const flatness = metrics?.spectralFlatness || 0.2;
 
-  // 18-channel curated spectral colors (Sub-green -> Bass-cyan -> Vocal-blue -> Pres-purple -> Air-pink)
+// 18-channel curated dark alternative spectral colors for HUD bars
   const getBandColor = (idx: number) => {
-    if (idx < 2) return '#84cc16'; // Deep Sub (Lime)
-    if (idx < 5) return '#10b981'; // Kick Punch (Emerald)
-    if (idx < 8) return '#06b6d4'; // Lower Mids (Cyan)
-    if (idx < 11) return '#3b82f6'; // Vocal Mids (Blue)
-    if (idx < 14) return '#8b5cf6'; // Presence (Violet)
-    if (idx < 16) return '#d946ef'; // Treble (Fuchsia)
-    return '#f43f5e'; // Air / Brilliance (Rose)
+    if (idx < 2) return '#dc2626'; // Sub (Blood Red)
+    if (idx < 5) return '#991b1b'; // Kick (Dark Crimson)
+    if (idx < 8) return '#1e3a8a'; // Lower Mids (Abyssal Blue)
+    if (idx < 11) return '#3b82f6'; // Vocal Mids (Ice Blue)
+    if (idx < 14) return '#6b21a8'; // Presence (Dark Violet)
+    if (idx < 16) return '#7c3aed'; // Treble (Cryo Violet)
+    return '#f1f5f9'; // Air / Brilliance (Stark White)
   };
+
+  // 18-band visual control labels for HUD hover tooltip
+  const BAND_VISUAL_LABELS = [
+    'B0 Sub1: Lens Shockwave',
+    'B1 Sub2: Core Volume',
+    'B2 Kick1: Camera Recoil',
+    'B3 Kick2: Shockwave Ripple',
+    'B4 Bass: Warp Viscosity',
+    'B5 Bass: Tendril Braid',
+    'B6 Mid: Chladni Mode',
+    'B7 Mid: Azimuth Rotation',
+    'B8 Snare: Tunnel Aperture',
+    'B9 Vocal: Mandala Ring',
+    'B10 Vocal: Palette Drift',
+    'B11 Snap: Chromatic Glitch',
+    'B12 Pres: Crystal Ridge',
+    'B13 Pres: Mist Emission',
+    'B14 Treb: Fresnel Sheen',
+    'B15 Treb: Specular Spark',
+    'B16 Air: Starlight Scatter',
+    'B17 Air: Surface Ripple',
+  ];
+
 
   return (
     <>
@@ -129,17 +152,28 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
             <span className="text-[8px] text-white/40">20Hz — 20kHz</span>
           </div>
 
-          <div className="flex items-end gap-0.5 h-10 bg-black/50 p-1 rounded-md border border-white/10">
+        <div className="flex items-end gap-0.5 h-10 bg-black/60 p-1 rounded-md border border-white/10">
             {bands.map((val, idx) => (
-              <div key={idx} className="flex-1 bg-white/5 rounded-xs h-full flex items-end overflow-hidden">
+              <div
+                key={idx}
+                className="flex-1 bg-white/5 rounded-xs h-full flex items-end overflow-hidden relative group cursor-pointer"
+                title={BAND_VISUAL_LABELS[idx]}
+              >
                 <div 
                   className="w-full transition-all duration-75 rounded-xs"
                   style={{
                     height: `${Math.min(100, Math.max(6, val * 100))}%`,
                     backgroundColor: getBandColor(idx),
-                    boxShadow: val > 0.6 ? `0 0 6px ${getBandColor(idx)}` : 'none'
+                    boxShadow: val > 0.5 ? `0 0 6px ${getBandColor(idx)}` : 'none'
                   }}
                 />
+                {/* Hover tooltip */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:flex flex-col items-center z-50 pointer-events-none">
+                  <div className="bg-black/95 border border-white/20 rounded px-1.5 py-1 text-[8px] font-mono text-white/90 whitespace-nowrap shadow-xl">
+                    {BAND_VISUAL_LABELS[idx]}
+                  </div>
+                  <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-white/20" />
+                </div>
               </div>
             ))}
           </div>
@@ -863,19 +897,21 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
             {/* CLUB EDM COLOR PALETTE SUITE */}
             <div className="space-y-2 pt-1 border-t border-white/10">
               <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                <label>Club EDM Palette Presets</label>
-                <span className="text-lime-400 font-bold tabular-nums">{colorBase.h.toFixed(2)}</span>
+                <label>Dark Alternative Palette Presets</label>
+                <span className="text-red-400 font-bold tabular-nums">{colorBase.h.toFixed(2)}</span>
               </div>
 
-              {/* Quick Select Buttons for Club EDM Themes */}
+              {/* Quick Select Buttons for Dark Alternative Themes */}
               <div className="grid grid-cols-2 gap-1.5">
                 {[
-                  { name: 'Cyber Cobalt', h: 0.60, s: 0.85, l: 0.40, color: '#38bdf8' },
-                  { name: 'Ultraviolet', h: 0.78, s: 0.85, l: 0.40, color: '#a855f7' },
-                  { name: 'Acid Mint', h: 0.46, s: 0.85, l: 0.40, color: '#2dd4bf' },
-                  { name: 'Monochrome', h: 0.60, s: 0.05, l: 0.35, color: '#94a3b8' }
+                  { name: 'Blood Crimson', h: 0.00, s: 0.90, l: 0.35, color: '#991b1b' },
+                  { name: 'Abyssal Blue', h: 0.62, s: 0.90, l: 0.30, color: '#1e3a8a' },
+                  { name: 'Cryo Violet', h: 0.78, s: 0.85, l: 0.30, color: '#6b21a8' },
+                  { name: 'Monochrome Noir', h: 0.60, s: 0.05, l: 0.35, color: '#475569' },
+                  { name: 'Smoked Teal', h: 0.50, s: 0.80, l: 0.25, color: '#164e63' },
+                  { name: 'Cyber Cobalt', h: 0.60, s: 0.85, l: 0.40, color: '#1d4ed8' },
                 ].map(theme => {
-                  const isCurrent = Math.abs(colorBase.h - theme.h) < 0.04 && (theme.name !== 'Monochrome' || colorBase.s < 0.2);
+                  const isCurrent = Math.abs(colorBase.h - theme.h) < 0.04 && (theme.name !== 'Monochrome Noir' || colorBase.s < 0.2);
                   return (
                     <button
                       key={theme.name}
@@ -890,7 +926,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: theme.color }} />
                         <span>{theme.name}</span>
                       </div>
-                      {isCurrent && <span className="text-[8px] text-lime-400 font-bold">ON</span>}
+                      {isCurrent && <span className="text-[8px] text-red-400 font-bold">ON</span>}
                     </button>
                   );
                 })}

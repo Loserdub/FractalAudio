@@ -43,6 +43,7 @@ uniform float u_lens_shock;  // Viscoelastic subwoofer acoustic lens shock (0.0 
 
 // 2D Temporal Acoustic Spectrogram History Ring Buffer (256 bins x 64 history slices)
 uniform sampler2D u_audio_history;
+uniform float u_history_offset; // Circular ring buffer head offset (0.0 to 1.0)
 
 // Geometry & FX Uniforms
 uniform int u_geometry_mode;        // 0: Classic 2D Liquid, 1: 3D Mandelbulb, 2: 3D Julia, 3: 3D Ink Flow, 4: Sri Yantra, 5: Metatron, 6: Torus Knot, 7: Pyramid, 8: Tunnel
@@ -62,21 +63,25 @@ vec3 cosPalette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
     return a + b * cos(6.2831853 * (c * t + d));
 }
 
-// Rich Deep Club EDM Color Palettes (Cyber Cobalt & Ice Cyan, Dark Ultraviolet & Laser Violet, Obsidian Charcoal & Acid Mint)
+// Dark Alternative Industrial & Deep Cool Color Palettes (Blood Crimson & Obsidian, Abyssal Midnight Blue, Monochrome Noir & Stark Silver, Cold Cryo Violet)
 vec3 getDynamicPalette(float t, float colorSelect) {
-    // Palette 1: Cyber Cobalt & Electric Icy Cyan (Anyma / Eric Prydz HOLO vibe)
-    vec3 col1 = cosPalette(t, vec3(0.16, 0.36, 0.65), vec3(0.18, 0.32, 0.38), vec3(0.85, 0.95, 1.15), vec3(0.05, 0.22, 0.55));
+    // Palette 1: Blood Crimson & Smoked Obsidian (Goth/Industrial - Deep blood red, coal black, bone white highlights)
+    vec3 col1 = cosPalette(t, vec3(0.35, 0.07, 0.12), vec3(0.42, 0.08, 0.16), vec3(1.00, 0.85, 0.90), vec3(0.00, 0.15, 0.20));
     
-    // Palette 2: Dark Ultraviolet & Laser Violet (Afterlife / Dark Warehouse Techno vibe)
-    vec3 col2 = cosPalette(t, vec3(0.36, 0.16, 0.65), vec3(0.30, 0.18, 0.36), vec3(0.90, 0.82, 1.10), vec3(0.50, 0.18, 0.70));
+    // Palette 2: Abyssal Midnight & Phantom Ice (Deep dark blue, cold indigo, stark icy cyan glints)
+    vec3 col2 = cosPalette(t, vec3(0.08, 0.18, 0.45), vec3(0.12, 0.22, 0.38), vec3(0.90, 0.95, 1.05), vec3(0.55, 0.20, 0.60));
     
-    // Palette 3: Obsidian Charcoal & Acid Cold Mint (Underground Berlin Minimal vibe)
-    vec3 col3 = cosPalette(t, vec3(0.12, 0.50, 0.44), vec3(0.14, 0.40, 0.35), vec3(0.95, 1.00, 1.00), vec3(0.10, 0.44, 0.40));
+    // Palette 3: Monochrome Noir & Stark Silver (Pitch black, dark smoked graphite, stark silver/white glints)
+    vec3 col3 = cosPalette(t, vec3(0.22, 0.23, 0.26), vec3(0.26, 0.26, 0.28), vec3(1.00, 1.00, 1.00), vec3(0.00, 0.33, 0.67));
     
-    float pFactor = mod(colorSelect * 3.0, 3.0);
+    // Palette 4: Cold Cryo Violet & Smoked Teal (Dark plum violet, slate shadow, stark cryo teal highlights)
+    vec3 col4 = cosPalette(t, vec3(0.24, 0.10, 0.42), vec3(0.20, 0.25, 0.35), vec3(0.85, 1.05, 0.95), vec3(0.40, 0.55, 0.30));
+    
+    float pFactor = mod(colorSelect * 4.0, 4.0);
     if (pFactor < 1.0) return mix(col1, col2, pFactor);
     if (pFactor < 2.0) return mix(col2, col3, pFactor - 1.0);
-    return mix(col3, col1, pFactor - 2.0);
+    if (pFactor < 3.0) return mix(col3, col4, pFactor - 2.0);
+    return mix(col4, col1, pFactor - 3.0);
 }
 
 // ACES Filmic Tone Mapping to prevent overexposure & blown-out whites
@@ -118,40 +123,39 @@ vec2 applyKaleidoscope(vec2 p, float folds) {
 
 // Temporal Acoustic Wave: Samples the 2D FFT history texture along spatial depth & temporal lag
 float getTemporalAcousticWave(vec3 p, float freqOffset) {
-    // Map spatial distance to historical time coordinate (0.0 = present, 1.0 = historical lag)
-    float timeLag = fract(length(p) * 0.12 - u_audio_time * 0.10);
+    // Map spatial distance to historical time coordinate with circular ring buffer wrapping
+    float timeLag = fract(length(p) * 0.12 - u_audio_time * 0.10 + u_history_offset);
     float freqNorm = clamp(freqOffset + u_spectral_centroid * 0.25, 0.02, 0.98);
     float wave = texture2D(u_audio_history, vec2(freqNorm, timeLag)).r;
     return wave;
 }
 
 // Cymatic Chladni Standing Wave Resonance Generator
+// Band 6 (Mid Low 410-580 Hz): Vibrational mode M order
 float chladniResonance(vec3 p) {
-    // Modal vibrational numbers N and M driven by timbral centroid and mid harmonic ratios
-    float n = 2.0 + floor(u_spectral_centroid * 4.0); // Mode N (2..6)
-    float m = 3.0 + floor(u_bands[6] * 3.0);           // Mode M (3..6)
+    float n = 2.0 + floor(u_spectral_centroid * 4.0); // Mode N (2..6) driven by timbral centroid
+    float m = 3.0 + floor(u_bands[6] * 4.0);           // Mode M (3..7) — Band 6 exclusive control
     
     const float pi = 3.14159265359;
-    // Chladni 2D/3D nodal line equations for vibrating acoustic plates
     float w1 = sin(n * pi * p.x) * sin(m * pi * p.y) - sin(m * pi * p.x) * sin(n * pi * p.y);
     float w2 = sin(m * pi * p.y) * sin(n * pi * p.z) - sin(n * pi * p.y) * sin(m * pi * p.z);
     float chladni = abs(w1 * 0.6 + w2 * 0.4);
-    
-    // Sharpen into crystalline nodal ridge lines
-    return pow(chladni, 1.6) * (0.04 + u_audio_mid * 0.035 + u_audio_pres * 0.035);
+    return pow(chladni, 1.6) * (0.04 + u_bands[12] * 0.04 + u_bands[13] * 0.03);
 }
 
 // Micro-displacement surface generator: Blends high-frequency acoustic details into 3D SDFs
+// Band 3  (Kick 2, 130-195 Hz): Acoustic shockwave ripples
+// Band 14 (Treb Low, 6.68-9.47 kHz): Surface ripple base amplitude
+// Band 17 (Air High, 16.7-20 kHz): Cyber surface micro-ripple sparkle
 float getMicroDisplacement(vec3 p) {
-    // Audio-reactive high-frequency surface ripple
+    // Band 17: Cyber surface micro-ripple — air sparkle control
     float ripple = sin(p.x * 18.0 + u_audio_time * 0.9) * cos(p.y * 18.0 - u_audio_time * 0.7) * sin(p.z * 18.0);
-    float baseRipple = ripple * (0.012 + u_audio_treb * 0.020 + u_audio_air * 0.018);
+    float baseRipple = ripple * (0.010 + u_bands[14] * 0.022 + u_bands[17] * 0.020);
     
-    // Physical cymatic nodal resonance ridges
     float cymatic = chladniResonance(p);
     
-    // Historical audio shockwave ripple traveling through spatial geometry
-    float temporalWave = getTemporalAcousticWave(p, 0.12) * 0.045 * (1.0 + u_audio_kick * 0.7 + u_beat_kick * 0.5);
+    // Band 3: Acoustic shockwave traveling through spatial geometry
+    float temporalWave = getTemporalAcousticWave(p, 0.12) * 0.045 * (1.0 + u_bands[3] * 1.2 + u_beat_kick * 0.5);
     
     return baseRipple + cymatic + temporalWave;
 }
@@ -166,7 +170,7 @@ vec4 renderLiquidJulia2D(vec2 uv) {
     
     // 2. Dynamic Scale / Zoom centered on u_offset safely bounded within screen limits
     float rUv = length(uv);
-    float historyWave2D = texture2D(u_audio_history, vec2(0.15, fract(rUv * 1.5 - u_audio_time * 0.08))).r;
+    float historyWave2D = texture2D(u_audio_history, vec2(0.15, fract(rUv * 1.5 - u_audio_time * 0.08 + u_history_offset))).r;
     float zoomFactor = (1.75 / max(0.2, u_zoom)) * (1.0 - (u_bands[0] + u_bands[1]) * 0.06 - u_audio_kick * 0.06 - u_beat_kick * 0.04 - historyWave2D * 0.035);
     vec2 p = rot * (uv * zoomFactor) + u_offset;
     
@@ -289,14 +293,16 @@ float mapJulia3D(vec3 p, out float trap) {
 }
 
 // 3D Mandelbulb SDF
+// Band 1 (Sub 2): Core geometry volume & mass expansion
+// Band 7 (Mid Warm): Rotational azimuth momentum
 float mapMandelbulb(vec3 p, out float trap) {
     vec3 w = p;
     float dr = 1.0;
     float r = 0.0;
     trap = 1.0;
     
-    // Mids, Kick, & Sub drive power modulation dynamically (6.0 to 16.0)
-    float power = 6.0 + u_audio_mid * 5.5 + u_audio_kick * 3.5 + u_audio_sub * 2.0 + u_beat_kick * 2.0;
+    // Band 1 + Band 7: power modulation (6.0 to 16.0)
+    float power = 6.0 + u_bands[7] * 5.5 + u_bands[2] * 3.5 + u_bands[1] * 2.0 + u_beat_kick * 2.0;
 
     for (int i = 0; i < 8; i++) {
         r = length(w);
@@ -309,8 +315,9 @@ float mapMandelbulb(vec3 p, out float trap) {
         dr = pow(r, power - 1.0) * power * dr + 1.0;
 
         float zr = pow(r, power);
-        theta = theta * power + u_audio_time * 0.14 + u_audio_mid * 0.35 + u_audio_sub * 0.25;
-        phi = phi * power + u_audio_time * 0.10 + u_audio_treb * 0.25 + u_audio_air * 0.15;
+        // Band 7: rotational azimuth momentum
+        theta = theta * power + u_audio_time * 0.14 + u_bands[7] * 0.38 + u_bands[1] * 0.25;
+        phi = phi * power + u_audio_time * 0.10 + u_bands[14] * 0.28 + u_bands[16] * 0.15;
 
         w = zr * vec3(sin(theta) * cos(phi), sin(phi) * sin(theta), cos(theta));
         w += p;
@@ -320,90 +327,111 @@ float mapMandelbulb(vec3 p, out float trap) {
 }
 
 // 3D Organic Ink Flow / Fluid Dispersion SDF
+// Band 4 (Bass Low, 195-280 Hz): Fluid domain warp viscosity amplitude
+// Band 5 (Bass Mid, 280-410 Hz): Tendril braiding radius
+// Band 1 (Sub 2, 45-85 Hz): Core volume & mass expansion
 float mapInkFlow(vec3 p, out float trap) {
     vec3 q = p;
-    // Fluid Domain Warping driven smoothly by Audio Momentum & Mids/Sub
-    float warp = sin(q.x * 2.0 + u_audio_time * 0.35) * cos(q.y * 2.0 - u_audio_mid * 1.2) * sin(q.z * 2.0 + u_audio_sub * 1.0);
-    q += vec3(warp * 0.25);
+    // Band 4: Fluid domain warping viscosity — bass low exclusive
+    float warp = sin(q.x * 2.0 + u_audio_time * 0.35) * cos(q.y * 2.0 - u_bands[4] * 1.6) * sin(q.z * 2.0 + u_bands[1] * 1.2);
+    q += vec3(warp * (0.20 + u_bands[4] * 0.18));
 
-    // Core Fluid Ink Blob expansion sized properly to fill screen center
-    float dCore = length(q) - (0.85 + u_audio_sub * 0.25 + u_audio_kick * 0.20 + u_beat_kick * 0.12);
+    // Band 1: Core geometry volume & mass expansion
+    float dCore = length(q) - (0.85 + u_bands[1] * 0.30 + u_bands[2] * 0.22 + u_beat_kick * 0.12);
     
-    // Tendril Fluid Waves driven continuously by Treble, Presence, & Snare
-    float dTendrils = sin(q.x * 2.6 + u_audio_time * 0.50) * cos(q.y * 2.6 + u_audio_mid * 0.8) * sin(q.z * 2.6 + u_audio_pres * 0.8) * (0.20 + u_audio_treb * 0.14 + u_audio_snare * 0.12);
+    // Band 5: Tendril braiding radius
+    float dTendrils = sin(q.x * 2.6 + u_audio_time * 0.50) * cos(q.y * 2.6 + u_bands[5] * 1.0) * sin(q.z * 2.6 + u_bands[4] * 0.9) * (0.20 + u_bands[14] * 0.14 + u_bands[11] * 0.12);
     
     trap = length(q);
     return max(0.0001, (dCore + dTendrils) * 0.65);
 }
 
 // Sacred Sri Yantra Mandala SDF
+// Band 9 (Vocal Low): Middle mandala ring breathing
+// Band 12 (Pres Low): Crystalline surface ridge sharpness
 float mapSriYantra(vec3 p, out float trap) {
     vec3 pScaled = p * 1.4;
     float r = length(pScaled.xy);
     float a = atan(pScaled.y, pScaled.x);
     
-    float ring1 = abs(r - (0.75 + sin(u_audio_time * 0.15 + u_audio_sub * 0.4) * 0.12 + u_audio_kick * 0.15 + u_beat_kick * 0.09)) - 0.035;
-    float ring2 = abs(r - (0.50 + u_audio_mid * 0.12)) - 0.025;
-    float ring3 = abs(r - (0.28 + u_audio_pres * 0.06)) - 0.015;
+    // Band 9: middle mandala ring — vocal low exclusive
+    float ring1 = abs(r - (0.75 + sin(u_audio_time * 0.15 + u_bands[1] * 0.4) * 0.12 + u_bands[2] * 0.15 + u_beat_kick * 0.09)) - 0.035;
+    float ring2 = abs(r - (0.50 + u_bands[9] * 0.14)) - 0.025;
+    float ring3 = abs(r - (0.28 + u_bands[12] * 0.08)) - 0.015;
     
-    vec3 q = rotateZ(floor(a * 4.5 + u_audio_mid * 1.0) / 4.5) * pScaled;
-    float tri = max(abs(q.x) * 0.866 + q.y * 0.5, -q.y) - (0.40 + u_audio_kick * 0.15 + u_audio_sub * 0.12);
+    vec3 q = rotateZ(floor(a * 4.5 + u_bands[7] * 1.0) / 4.5) * pScaled;
+    float tri = max(abs(q.x) * 0.866 + q.y * 0.5, -q.y) - (0.40 + u_bands[2] * 0.15 + u_bands[1] * 0.12);
     
     trap = r;
     return (max(min(ring1, min(ring2, ring3)), abs(pScaled.z) - 0.10) / 1.4);
 }
 
 // Metatron's Cube & Flower of Life SDF
+// Band 1 (Sub 2): Core geometry volume & mass expansion
+// Band 9 (Vocal Low): Outer sphere radii
 float mapMetatronCube(vec3 p, out float trap) {
     vec3 pScaled = p * 1.8;
-    float centerSphere = length(pScaled) - (0.26 + u_audio_sub * 0.15 + u_audio_kick * 0.12);
+    // Band 1: center sphere volume
+    float centerSphere = length(pScaled) - (0.26 + u_bands[1] * 0.18 + u_bands[2] * 0.12);
     
     vec3 absP = abs(pScaled);
-    float outerSpheres = length(absP - vec3(0.55, 0.55, 0.55)) - (0.14 + u_audio_snare * 0.10 + u_audio_pres * 0.08);
+    // Band 9: outer sphere radii — vocal low exclusive
+    float outerSpheres = length(absP - vec3(0.55, 0.55, 0.55)) - (0.14 + u_bands[9] * 0.12 + u_bands[12] * 0.08);
     
-    float beam = length(vec2(length(pScaled.xy) - 0.55, pScaled.z)) - (0.02 + u_audio_mid * 0.05 + u_audio_treb * 0.04);
+    float beam = length(vec2(length(pScaled.xy) - 0.55, pScaled.z)) - (0.02 + u_bands[7] * 0.05 + u_bands[14] * 0.04);
     
     trap = length(pScaled);
     return (min(min(centerSphere, outerSpheres), beam) / 1.8);
 }
 
 // 3D Trefoil Torus Knot SDF
+// Band 5 (Bass Mid): Torus knot braiding radius
+// Band 7 (Mid Warm): Rotational azimuth momentum
 float mapTorusKnot(vec3 p, out float trap) {
-    vec3 q = rotateZ(u_audio_time * 0.10 + u_audio_mid * 0.9 + u_audio_snare * 0.4) * (p * 1.5);
+    // Band 7: rotational azimuth momentum
+    vec3 q = rotateZ(u_audio_time * 0.10 + u_bands[7] * 0.9 + u_bands[11] * 0.4) * (p * 1.5);
     float r = length(q.xy);
     float a = atan(q.y, q.x);
     
-    vec2 cl = vec2(r - (0.70 + u_audio_kick * 0.20 + u_audio_sub * 0.15), q.z);
+    // Band 5: torus knot & tendril braiding radius
+    vec2 cl = vec2(r - (0.70 + u_bands[2] * 0.20 + u_bands[5] * 0.18), q.z);
     float angleKnot = a * 1.5;
-    vec2 knotP = vec2(sin(angleKnot), cos(angleKnot)) * 0.22;
+    vec2 knotP = vec2(sin(angleKnot), cos(angleKnot)) * (0.18 + u_bands[5] * 0.12);
     
-    float knotD = length(cl - knotP) - (0.08 + u_audio_snare * 0.06 + u_audio_treb * 0.05);
+    float knotD = length(cl - knotP) - (0.08 + u_bands[11] * 0.06 + u_bands[14] * 0.05);
     trap = r;
     return (knotD / 1.5);
 }
 
 // Cybernetic Prism Pyramid SDF
+// Band 12 (Pres Low): Crystal size sharpness
+// Band 7 (Mid Warm): Rotational momentum
 float mapPrismPyramid(vec3 p, out float trap) {
     vec3 q = p * 1.5;
     q.y += 0.35;
     
     float pyr = max(abs(q.x) + q.y, max(abs(q.z) + q.y, -q.y - 0.8));
     
-    vec3 crystalP = q - vec3(0.0, 0.8 + sin(u_audio_time * 0.45 + u_audio_sub * 0.4) * 0.20 + u_audio_kick * 0.20 + u_beat_kick * 0.14, 0.0);
-    crystalP = rotateY(u_audio_time * 0.45 + u_audio_mid * 0.9 + u_audio_pres * 0.5) * crystalP;
-    float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) - (0.18 + u_audio_treb * 0.18 + u_audio_air * 0.12);
+    // Band 12: crystal size — pres low exclusive
+    vec3 crystalP = q - vec3(0.0, 0.8 + sin(u_audio_time * 0.45 + u_bands[1] * 0.4) * 0.20 + u_bands[2] * 0.20 + u_beat_kick * 0.14, 0.0);
+    crystalP = rotateY(u_audio_time * 0.45 + u_bands[7] * 0.9 + u_bands[9] * 0.5) * crystalP;
+    float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) - (0.16 + u_bands[12] * 0.20 + u_bands[16] * 0.12);
     
     trap = length(crystalP);
     return (min(pyr, crystal) / 1.5);
 }
 
 // Infinite Cosmic Tunnel SDF with Temporal Shockwaves
+// Band 1 (Sub 2): Core volume & mass
+// Band 8 (Snare Body): Aperture cavity breath & rib depth
 float mapCosmicTunnel(vec3 p, out float trap) {
     float r = length(p.xy);
-    // Historical audio shockwave traveling backwards through the tunnel
     float historyWave = getTemporalAcousticWave(p, 0.08) * 0.20;
-    float tunnel = abs(r - (1.1 + u_audio_kick * 0.25 + u_audio_sub * 0.18 + historyWave)) - 0.07;
-    float rib = abs(sin(p.z * 2.5 + u_audio_time * 1.2 + u_audio_sub * 1.8)) - (0.05 + u_audio_snare * 0.09 + u_audio_pres * 0.06);
+    // Band 8: aperture cavity breath — snare body exclusive
+    float haloRadius = 1.1 + u_bands[8] * 0.28 + u_bands[1] * 0.18 + historyWave;
+    float tunnel = abs(r - haloRadius) - 0.07;
+    // Band 8: rib depth — snare body exclusive
+    float rib = abs(sin(p.z * 2.5 + u_audio_time * 1.2 + u_bands[1] * 1.8)) - (0.05 + u_bands[8] * 0.10 + u_bands[12] * 0.06);
     
     trap = r;
     return max(tunnel, rib);
@@ -450,10 +478,10 @@ vec3 calcNormal(vec3 p) {
 void main() {
     vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
 
-    // Subwoofer Acoustic Lens Shock (Gently bounded to prevent pushing geometry off-screen)
+    // Band 0 (Sub 1): Lens shockwave & peripheral warp — exclusive
     float r2 = dot(uv, uv);
     float boundedR2 = min(r2, 0.85);
-    float lensDisplacement = (u_audio_sub * 0.025 + u_beat_kick * 0.035 + u_lens_shock * 0.04) * boundedR2;
+    float lensDisplacement = (u_bands[0] * 0.030 + u_beat_kick * 0.035 + u_lens_shock * 0.04) * boundedR2;
     uv *= (1.0 + lensDisplacement);
 
     if (u_geometry_mode == 0) {
@@ -470,10 +498,11 @@ void main() {
 
     uv = applyKaleidoscope(uv, u_kaleidoscope_folds);
 
-    // Camera distance with responsive rhythmic breathing, firmly keeping object framed within screen borders
-    float camDist = 3.6 * u_zoom * (1.0 - u_audio_sub * 0.06 - u_audio_kick * 0.05 - u_beat_kick * 0.04);
-    float rotY = u_audio_time * 0.45 + u_offset.x * 2.5 + u_audio_mid * 0.25 + u_audio_snare * 0.15;
-    float rotX = u_offset.y * 2.5 + sin(u_audio_time * 0.28) * 0.18 + u_audio_sub * 0.10;
+    // Band 2 (Kick 1): Camera distance Z-recoil thump — exclusive
+    float camDist = 3.6 * u_zoom * (1.0 - u_bands[0] * 0.06 - u_bands[2] * 0.06 - u_beat_kick * 0.04);
+    // Band 7 (Mid Warm): Rotational azimuth momentum in main()
+    float rotY = u_audio_time * 0.45 + u_offset.x * 2.5 + u_bands[7] * 0.28 + u_bands[11] * 0.15;
+    float rotX = u_offset.y * 2.5 + sin(u_audio_time * 0.28) * 0.18 + u_bands[0] * 0.10;
 
     vec3 ro = vec3(0.0, 0.0, -camDist);
     // Controlled, rhythmic sway centered on screen
@@ -528,8 +557,8 @@ void main() {
         volumetricMist = mistCol * accumMist * (0.03 + u_audio_sub * 0.04 + u_audio_mid * 0.025);
     }
 
-    // Deep pitch obsidian background base for Club EDM aesthetic
-    vec3 bgBase = vec3(0.003, 0.005, 0.009);
+    // Pitch obsidian background — near absolute black for dark alternative contrast
+    vec3 bgBase = vec3(0.002, 0.003, 0.005);
     vec3 finalColor = bgBase;
 
     if (hit) {
@@ -540,12 +569,13 @@ void main() {
         vec3 viewDir = normalize(ro - hitPos);
         vec3 halfDir = normalize(lightDir + viewDir);
         
-        // Controlled specular and rim highlights without blinding glare
-        float spec = pow(max(dot(normal, halfDir), 0.0), 32.0) * (0.45 + u_audio_treb * 0.9 + u_audio_air * 0.7 + u_audio_snare * 0.6);
-        float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 2.2) * (0.65 + u_audio_pres * 0.9 + u_audio_treb * 0.7);
+        // Band 15 (Treb High): Specular micro-facet gloss spark — exclusive
+        float spec = pow(max(dot(normal, halfDir), 0.0), 32.0) * (0.40 + u_bands[15] * 1.8 + u_bands[11] * 0.5);
+        // Band 14 (Treb Low): Fresnel rim light & grazing angle sheen — exclusive
+        float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 2.2) * (0.60 + u_bands[14] * 1.4 + u_bands[12] * 0.5);
         
-        // Palette position drift across bands with gentle kinetic audio momentum
-        float palettePos = trap * 0.5 + u_audio_time * 0.012 + u_audio_treb * 0.20 + u_audio_air * 0.15 + u_audio_kick * 0.08;
+        // Band 10 (Vocal Mid): Dynamic palette color wheel shift — exclusive
+        float palettePos = trap * 0.5 + u_audio_time * 0.012 + u_bands[10] * 0.35 + u_bands[16] * 0.18 + u_bands[2] * 0.08;
         vec3 baseRGB = getDynamicPalette(palettePos, u_color_base.x);
         
         // Anti-strobe exposure limits (clamped strictly to 0.95)
@@ -556,13 +586,14 @@ void main() {
         float fog = exp(-t * 0.10);
         finalColor = mix(bgBase, finalColor, fog);
     } else {
-        // Deep club background illumination pulsing softly with Sub-bass & Kick
-        float bgGlow = (1.0 - length(uv) * 0.5) * (0.06 + u_audio_sub * 0.25 + u_audio_kick * 0.20);
-        vec3 palColor = getDynamicPalette(u_color_base.x + u_audio_treb * 0.08, u_color_base.x);
+        // Deep obsidian background glow — Band 0 (Sub1) & Band 2 (Kick1)
+        float bgGlow = (1.0 - length(uv) * 0.5) * (0.05 + u_bands[0] * 0.28 + u_bands[2] * 0.22);
+        vec3 palColor = getDynamicPalette(u_color_base.x + u_bands[14] * 0.08, u_color_base.x);
         finalColor = bgBase + palColor * bgGlow * u_glow_intensity * 0.8;
     }
 
-    // Blend in Beer-Lambert volumetric absorption mist
+    // Band 13 (Pres High): Volumetric Beer-Lambert mist emission intensity — exclusive
+    volumetricMist *= (1.0 + u_bands[13] * 1.8);
     finalColor += volumetricMist * (1.0 + u_glow_intensity * 0.5);
 
     // Cyber grid effect (FX Mode 1) - Beat reactive laser floor
@@ -581,24 +612,33 @@ void main() {
         }
     }
 
-    // Chromatic subtle edge shift (FX Mode 2 or transient flare)
-    float chromaticSpread = (u_audio_snare * 0.04 + u_beat_snare * 0.05 + u_energy_flux * 0.03 + u_lens_shock * 0.04);
+    // Band 11 (Snare Snap): Chromatic glitch flare & edge fringe — exclusive
+    float chromaticSpread = u_bands[11] * 0.08 + u_beat_snare * 0.05 + u_energy_flux * 0.03 + u_lens_shock * 0.04;
     if (u_fx_mode == 2 || chromaticSpread > 0.08) {
         finalColor = mix(finalColor, vec3(finalColor.r, finalColor.b, finalColor.g), clamp(chromaticSpread * 0.3, 0.0, 0.14));
     }
 
-    // Particle Dust / Anti-aliased Star Flares (FX Mode 3)
+    // Band 16 (Air Low): Cosmic particle dust / starlight scatter — exclusive
     if (u_fx_mode == 3) {
         float particle = sin(uv.x * 50.0 + u_audio_time * 1.0) * cos(uv.y * 50.0 - u_audio_time * 0.8);
         float pGlow = smoothstep(0.94, 0.99, particle);
         if (pGlow > 0.0) {
-            vec3 starCol = getDynamicPalette(particle + u_audio_time * 0.02 + u_audio_treb * 0.15, u_color_base.x);
-            finalColor += starCol * pGlow * 1.2 * (1.0 + u_audio_treb * 0.6 + u_audio_air * 0.5);
+            vec3 starCol = getDynamicPalette(particle + u_audio_time * 0.02 + u_bands[14] * 0.15, u_color_base.x);
+            // Band 16: starlight scatter amplitude
+            finalColor += starCol * pGlow * 1.4 * (u_bands[16] * 1.5 + 0.4 + u_bands[17] * 0.6);
         }
     }
 
     // Refined ACES Filmic Tone Mapping with gentle dynamic exposure kick
-    finalColor = toneMapACES(finalColor * (1.0 + u_audio_kick * 0.06 + u_beat_kick * 0.05));
+    finalColor = toneMapACES(finalColor * (1.0 + u_bands[2] * 0.06 + u_beat_kick * 0.05));
+
+    // Beat-Reactive Vignette: edges crush to obsidian black on kick/sub hits
+    // Band 0 (Sub1): darkens vignette intensity — heavier sub = darker borders
+    // Band 2 (Kick1): contracts vignette radius — each kick squeezes light inward
+    // u_beat_kick: transient snap for percussive physical feel
+    float vigRadius = 0.88 - u_bands[2] * 0.16 - u_beat_kick * 0.12;
+    float vignette = smoothstep(vigRadius, vigRadius + 0.42, length(uv * 0.88));
+    finalColor *= (1.0 - vignette * (0.78 + u_bands[0] * 0.20));
 
     gl_FragColor = vec4(finalColor, 1.0);
 }

@@ -101,7 +101,7 @@ export default function App() {
   const [offsetX, setOffsetX] = useState(0.0);
   const [offsetY, setOffsetY] = useState(0.0);
   const [iterations, setIterationsState] = useState(64);
-  const [colorBase, setColorBaseState] = useState({ h: 0.60, s: 0.85, l: 0.40 }); // Cyber Cobalt
+  const [colorBase, setColorBaseState] = useState({ h: 0.00, s: 0.90, l: 0.35 }); // Blood Crimson & Obsidian Noir
   const [juliaC, setJuliaCState] = useState({ x: -0.8, y: 0.156 });
   const [sensitivity, setSensitivityState] = useState(1.4); // Balanced, calm reactivity
 
@@ -178,9 +178,10 @@ export default function App() {
 
   const randomize = useCallback(() => {
     const newJulia = { x: (Math.random() * 3.2 - 1.6), y: (Math.random() * 3.2 - 1.6) };
-    const clubHues = [0.60, 0.78, 0.46, 0.55, 0.82];
-    const newHue = clubHues[Math.floor(Math.random() * clubHues.length)];
-    const newColor = { h: newHue, s: 0.85, l: 0.40 };
+    // Dark Alternative palette hue pool (blood crimson, abyssal blue, cryo violet, smoked teal, monochrome noir)
+    const darkAltHues = [0.00, 0.62, 0.78, 0.50, 0.60];
+    const newHue = darkAltHues[Math.floor(Math.random() * darkAltHues.length)];
+    const newColor = { h: newHue, s: newHue === 0.60 && Math.random() < 0.3 ? 0.05 : 0.88, l: 0.30 + Math.random() * 0.10 };
     const newZoom = 0.85 + Math.random() * 0.5; // Well-bounded between 0.85 and 1.35
     const newMode = Math.floor(Math.random() * 9);
     const newFx = Math.floor(Math.random() * 4);
@@ -205,7 +206,10 @@ export default function App() {
   }, [recordKeyframe]);
 
   return (
-    <div className="relative w-full h-screen overflow-hidden text-white font-sans">
+    <div
+      className="relative w-full overflow-hidden text-white font-sans"
+      style={{ height: '100dvh' }}
+    >
       <Visualizer
         canvasRef={canvasRef}
         analyser={analyser}
@@ -251,54 +255,57 @@ export default function App() {
       {/* Customizable Artist Text Banner & Watermark */}
       <ArtistBanner config={bannerConfig} />
 
-      <Controls
-        audioMode={audioMode}
-        switchMode={switchMode}
-        isPlaying={isPlaying}
-        togglePlayPause={togglePlayPause}
-        currentTime={currentTime}
-        duration={duration}
-        volume={volume}
-        setVolume={setVolume}
-        fileName={fileName}
-        loadAudioFile={loadAudioFile}
-        seek={seek}
-        zoom={zoom}
-        setZoom={setZoom}
-        iterations={iterations}
-        setIterations={setIterations}
-        colorBase={colorBase}
-        setColorBase={setColorBase}
-        juliaC={juliaC}
-        setJuliaC={setJuliaC}
-        sensitivity={sensitivity}
-        setSensitivity={setSensitivity}
-        geometryMode={geometryMode}
-        setGeometryMode={setGeometryMode}
-        fxMode={fxMode}
-        setFxMode={setFxMode}
-        kaleidoscopeFolds={kaleidoscopeFolds}
-        setKaleidoscopeFolds={setKaleidoscopeFolds}
-        rotSpeed={rotSpeed}
-        setRotSpeed={setRotSpeed}
-        glowIntensity={glowIntensity}
-        setGlowIntensity={setGlowIntensity}
-        randomize={randomize}
+      {/* Controls: auto-hide in true fullscreen for immersive view */}
+      {!isFullscreen && (
+        <Controls
+          audioMode={audioMode}
+          switchMode={switchMode}
+          isPlaying={isPlaying}
+          togglePlayPause={togglePlayPause}
+          currentTime={currentTime}
+          duration={duration}
+          volume={volume}
+          setVolume={setVolume}
+          fileName={fileName}
+          loadAudioFile={loadAudioFile}
+          seek={seek}
+          zoom={zoom}
+          setZoom={setZoom}
+          iterations={iterations}
+          setIterations={setIterations}
+          colorBase={colorBase}
+          setColorBase={setColorBase}
+          juliaC={juliaC}
+          setJuliaC={setJuliaC}
+          sensitivity={sensitivity}
+          setSensitivity={setSensitivity}
+          geometryMode={geometryMode}
+          setGeometryMode={setGeometryMode}
+          fxMode={fxMode}
+          setFxMode={setFxMode}
+          kaleidoscopeFolds={kaleidoscopeFolds}
+          setKaleidoscopeFolds={setKaleidoscopeFolds}
+          rotSpeed={rotSpeed}
+          setRotSpeed={setRotSpeed}
+          glowIntensity={glowIntensity}
+          setGlowIntensity={setGlowIntensity}
+          randomize={randomize}
 
-        isRecording={isRecording}
-        recordingSeconds={recordingSeconds}
-        hasSessionKeyframes={hasSessionKeyframes}
-        startRecording={startRecording}
-        stopRecording={stopRecording}
-        takeSnapshot={takeSnapshot}
-        exportSessionJson={exportSessionJson}
+          isRecording={isRecording}
+          recordingSeconds={recordingSeconds}
+          hasSessionKeyframes={hasSessionKeyframes}
+          startRecording={startRecording}
+          stopRecording={stopRecording}
+          takeSnapshot={takeSnapshot}
+          exportSessionJson={exportSessionJson}
 
-        bannerConfig={bannerConfig}
-        setBannerConfig={setBannerConfig}
+          bannerConfig={bannerConfig}
+          setBannerConfig={setBannerConfig}
 
-        isFullscreen={isFullscreen}
-        toggleFullscreen={toggleFullscreen}
-      />
+          isFullscreen={isFullscreen}
+          toggleFullscreen={toggleFullscreen}
+        />
+      )}
 
       {/* Floating Lower-Center Quick Action Dock */}
       <BottomBar
