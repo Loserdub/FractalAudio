@@ -180,6 +180,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_lens_shock: gl.getUniformLocation(program, 'u_lens_shock'),
       u_audio_history: gl.getUniformLocation(program, 'u_audio_history'),
       u_history_offset: gl.getUniformLocation(program, 'u_history_offset'),
+      u_beat_phase: gl.getUniformLocation(program, 'u_beat_phase'),
     };
 
     // 256x64 8-Bit Luminance Audio History Circular Ring Buffer Texture (Power-of-Two WebGL 1.0)
@@ -247,6 +248,8 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
 
     let lastKickTime = 0;
     let lastSnareTime = 0;
+    let beatIntervalMs = 500;  // Rolling estimated kick-to-kick interval (default ~120 BPM)
+    let beatPhase = 0.0;       // 0.0 → 1.0 normalized phase within the current beat cycle
     let lastFrameTime = performance.now();
     let lastMetricsEmitTime = 0;
     let audioTime = 0;
@@ -368,6 +371,11 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         if (kickFlux > kickMinThreshold && (nowMs - lastKickTime > 110)) {
           isKickBeat = true;
           kickTrigger = 1.0;
+          // EMA tempo estimator: update rolling beat interval from kick-to-kick timing
+          const newInterval = nowMs - lastKickTime;
+          if (newInterval > 200 && newInterval < 2000) {
+            beatIntervalMs = beatIntervalMs * 0.85 + newInterval * 0.15;
+          }
           lastKickTime = nowMs;
         }
 
@@ -381,6 +389,9 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       // Delta-time independent exponential decay on transient beat triggers
       kickTrigger *= Math.exp(-9.5 * dt);
       snareTrigger *= Math.exp(-9.5 * dt);
+
+      // Beat phase: 0.0 → 1.0 normalized position within the current beat cycle
+      beatPhase = Math.min(1.0, (nowMs - lastKickTime) / Math.max(1, beatIntervalMs));
 
       // 5. Multi-Rate Exponential Envelope Followers per Band
       for (let b = 0; b < 18; b++) {
@@ -509,6 +520,9 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
 
       gl.uniform1f(locs.u_beat_kick, kickTrigger);
       gl.uniform1f(locs.u_beat_snare, snareTrigger);
+      if (locs.u_beat_phase) {
+        gl.uniform1f(locs.u_beat_phase, beatPhase);
+      }
       if (locs.u_lens_shock) {
         gl.uniform1f(locs.u_lens_shock, lensShock);
       }

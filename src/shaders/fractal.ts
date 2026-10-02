@@ -40,6 +40,7 @@ uniform float u_energy_flux;        // Transient onset energy
 uniform float u_beat_kick;   // Smoothed kick transient (0.0 - 1.0)
 uniform float u_beat_snare;  // Smoothed snare transient (0.0 - 1.0)
 uniform float u_lens_shock;  // Viscoelastic subwoofer acoustic lens shock (0.0 - 1.0)
+uniform float u_beat_phase;  // Normalized 0.0→1.0 phase within the current beat cycle (EMA BPM)
 
 // 2D Temporal Acoustic Spectrogram History Ring Buffer (256 bins x 64 history slices)
 uniform sampler2D u_audio_history;
@@ -207,7 +208,9 @@ vec4 renderLiquidJulia2D(vec2 uv) {
     if (iter < maxIter) {
         float t = smooth_iter / float(maxIter);
         // Palette position drifting with Spectral Centroid filter sweeps, Treble, & Air
-        float palettePos = t * 0.8 + u_audio_time * 0.012 + u_spectral_centroid * 0.18 + u_bands[14] * 0.18 + u_bands[17] * 0.15;
+        // Beat-phase hue lock: palette advances within the beat cycle instead of purely with time
+        float palettePos = t * 0.8 + u_audio_time * 0.005 + u_beat_phase * 0.20
+                         + u_spectral_centroid * 0.18 + u_bands[14] * 0.18 + u_bands[17] * 0.15;
         vec3 basePal = getDynamicPalette(palettePos, u_color_base.x);
         
         // Balanced luminance curve with anti-strobe clamping (Club EDM dark background contrast)
@@ -224,28 +227,45 @@ vec4 renderLiquidJulia2D(vec2 uv) {
         color = vec3(0.003, 0.005, 0.009) + coreColor * corePulse;
     }
 
-    // FX Mode 1: Cyber Laser Grid (2D planar background overlay - Cool Blue/Cyan Laser)
+    // FX Mode 1: Cyber Laser Grid (2D screen-space overlay — uses uv so grid is always visible)
     if (u_fx_mode == 1) {
-        vec2 grid = abs(fract(p * 2.0 - vec2(0.0, u_audio_time * 0.25 + u_audio_sub * 0.6)) - 0.5);
+        vec2 gridUV = uv * (4.0 + u_audio_kick * 2.0);
+        vec2 grid = abs(fract(gridUV - vec2(0.0, u_audio_time * 0.25 + u_audio_sub * 0.6)) - 0.5);
         float line = min(grid.x, grid.y);
-        float gridGlow = smoothstep(0.05, 0.0, line);
+        float gridGlow = smoothstep(0.06, 0.0, line);
         vec3 gridCol = getDynamicPalette(u_audio_time * 0.008 + 0.3 + u_audio_kick * 0.1, u_color_base.x);
-        color += gridCol * gridGlow * 0.25 * (1.0 + u_audio_kick * 0.5 + u_audio_sub * 0.4);
+        color += gridCol * gridGlow * 0.30 * (1.0 + u_audio_kick * 0.6 + u_audio_sub * 0.5);
     }
 
-    // FX Mode 2: Soft chromatic edge warp (non-strobing, tight cool shift)
-    if (u_fx_mode == 2 || u_audio_snare > 0.55 || u_beat_snare > 0.55) {
-        float snareWarp = (u_audio_snare * 0.04 + u_beat_snare * 0.04);
-        color = mix(color, color.brg, clamp(snareWarp, 0.0, 0.12));
+    // FX Mode 2: Chromatic edge warp — ONLY fires when explicitly selected (no audio bleed)
+    if (u_fx_mode == 2) {
+        float snareWarp = clamp(u_audio_snare * 0.10 + u_beat_snare * 0.08, 0.0, 0.18);
+        color = mix(color, color.brg, snareWarp);
     }
 
-    // FX Mode 3: Particle Dust / Anti-aliased Starlight Flares
+    // FX Mode 3: Particle Dust — hash-based procedural star scatter
     if (u_fx_mode == 3) {
-        float particle = sin(uv.x * 50.0 + u_audio_time * 1.0) * cos(uv.y * 50.0 - u_audio_time * 0.8);
-        float pGlow = smoothstep(0.94, 0.99, particle);
-        if (pGlow > 0.0) {
-            vec3 starCol = getDynamicPalette(particle + u_audio_time * 0.02 + u_audio_treb * 0.15, u_color_base.x);
-            color += starCol * pGlow * 1.2 * (1.0 + u_audio_treb * 0.6 + u_audio_air * 0.5);
+        // Tile the screen into cells and place one star per cell
+        float cellSize = 0.04 + u_spectral_flatness * 0.02;
+        vec2 cellId = floor(uv / cellSize);
+        vec2 cellUV = fract(uv / cellSize);
+        // Cheap hash (deterministic per cell)
+        vec2 hashIn = cellId + vec2(127.1, 311.7);
+        float h1 = fract(sin(dot(hashIn, vec2(127.1, 311.7))) * 43758.5453);
+        float h2 = fract(sin(dot(hashIn + 1.0, vec2(269.5, 183.3))) * 43758.5453);
+        float h3 = fract(sin(dot(hashIn + 2.0, vec2(419.2, 371.9))) * 43758.5453);
+        // Star center offset within the cell
+        vec2 starPos = vec2(h1, h2);
+        float dist = length(cellUV - starPos);
+        // Twinkle animation: each star has its own phase
+        float twinkle = 0.55 + 0.45 * sin(u_audio_time * (2.0 + h3 * 6.0) + h1 * 6.2831);
+        float starRadius = (0.08 + h3 * 0.10) * twinkle * (1.0 + u_audio_treb * 0.8 + u_audio_air * 0.6);
+        float star = smoothstep(starRadius, 0.0, dist);
+        // Audio-reactive brightness: treble and air drive sparkle
+        float brightness = (0.6 + h2 * 0.4) * (1.0 + u_audio_treb * 1.2 + u_audio_air * 0.8 + u_beat_snare * 0.5);
+        if (star > 0.0) {
+            vec3 starCol = getDynamicPalette(h1 + h3 * 0.5 + u_audio_time * 0.015 + u_beat_phase * 0.12, u_color_base.x);
+            color += starCol * star * brightness;
         }
     }
 
@@ -301,8 +321,11 @@ float mapMandelbulb(vec3 p, out float trap) {
     float r = 0.0;
     trap = 1.0;
     
-    // Band 1 + Band 7: power modulation (6.0 to 16.0)
-    float power = 6.0 + u_bands[7] * 5.5 + u_bands[2] * 3.5 + u_bands[1] * 2.0 + u_beat_kick * 2.0;
+    // Band 1 + Band 7: power modulation (6.0 to 16.0) with beat-phase snap attack
+    // Sharp transient attack at beat onset (phase 0→0.18), long exponential decay to next beat
+    float beatAttack = smoothstep(0.0, 0.18, u_beat_phase) * (1.0 - smoothstep(0.18, 1.0, u_beat_phase));
+    float power = 6.0 + u_bands[7] * 5.5 + u_bands[2] * 3.5 + u_bands[1] * 2.0
+                + u_beat_kick * 2.0 + beatAttack * u_beat_kick * 4.5;
 
     for (int i = 0; i < 8; i++) {
         r = length(w);
@@ -388,8 +411,12 @@ float mapMetatronCube(vec3 p, out float trap) {
 // Band 5 (Bass Mid): Torus knot braiding radius
 // Band 7 (Mid Warm): Rotational azimuth momentum
 float mapTorusKnot(vec3 p, out float trap) {
-    // Band 7: rotational azimuth momentum
-    vec3 q = rotateZ(u_audio_time * 0.10 + u_bands[7] * 0.9 + u_bands[11] * 0.4) * (p * 1.5);
+    // Band 7: rotational azimuth momentum with beat-phase 16th-note subdivision stutter
+    // Rotation snaps to π/2 multiples on each subdivision, blended by kick strength
+    float subdivSnap = floor(u_beat_phase * 4.0) * 1.5708; // π/2 snaps per 16th-note
+    float freeRot = u_audio_time * 0.10 + u_bands[7] * 0.9 + u_bands[11] * 0.4;
+    float stutterRot = mix(freeRot, subdivSnap + u_bands[7] * 0.9, u_audio_kick * 0.50);
+    vec3 q = rotateZ(stutterRot) * (p * 1.5);
     float r = length(q.xy);
     float a = atan(q.y, q.x);
     
@@ -575,7 +602,9 @@ void main() {
         float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 2.2) * (0.60 + u_bands[14] * 1.4 + u_bands[12] * 0.5);
         
         // Band 10 (Vocal Mid): Dynamic palette color wheel shift — exclusive
-        float palettePos = trap * 0.5 + u_audio_time * 0.012 + u_bands[10] * 0.35 + u_bands[16] * 0.18 + u_bands[2] * 0.08;
+        // Beat-phase hue lock: color resets at each kick and cycles through the beat interval
+        float palettePos = trap * 0.5 + u_audio_time * 0.005 + u_beat_phase * 0.22
+                         + u_bands[10] * 0.35 + u_bands[16] * 0.18 + u_bands[2] * 0.08;
         vec3 baseRGB = getDynamicPalette(palettePos, u_color_base.x);
         
         // Anti-strobe exposure limits (clamped strictly to 0.95)
@@ -596,7 +625,7 @@ void main() {
     volumetricMist *= (1.0 + u_bands[13] * 1.8);
     finalColor += volumetricMist * (1.0 + u_glow_intensity * 0.5);
 
-    // Cyber grid effect (FX Mode 1) - Beat reactive laser floor
+    // Cyber grid effect (FX Mode 1) — 3D screen-space floor grid (always visible)
     if (u_fx_mode == 1) {
         float floorY = -1.6;
         if (rd.y < 0.0) {
@@ -610,22 +639,38 @@ void main() {
                 finalColor += gridCol * gridGlow * 0.35 * (1.0 + u_audio_kick * 0.5 + u_audio_sub * 0.4);
             }
         }
+        // Also overlay a screen-space grid in empty areas
+        vec2 sgrid = abs(fract(uv * (5.0 + u_audio_kick * 3.0) - vec2(0.0, u_audio_time * 0.15)) - 0.5);
+        float sline = min(sgrid.x, sgrid.y);
+        float sgridGlow = smoothstep(0.06, 0.0, sline) * (hit ? 0.0 : 1.0);
+        vec3 sgridCol = getDynamicPalette(u_audio_time * 0.006 + 0.4, u_color_base.x);
+        finalColor += sgridCol * sgridGlow * 0.20 * (1.0 + u_audio_sub * 0.5);
     }
 
-    // Band 11 (Snare Snap): Chromatic glitch flare & edge fringe — exclusive
-    float chromaticSpread = u_bands[11] * 0.08 + u_beat_snare * 0.05 + u_energy_flux * 0.03 + u_lens_shock * 0.04;
-    if (u_fx_mode == 2 || chromaticSpread > 0.08) {
-        finalColor = mix(finalColor, vec3(finalColor.r, finalColor.b, finalColor.g), clamp(chromaticSpread * 0.3, 0.0, 0.14));
+    // Band 11 (Snare Snap): Chromatic glitch flare — ONLY fires when FX mode 2 is selected
+    if (u_fx_mode == 2) {
+        float chromaticSpread = clamp(u_bands[11] * 0.10 + u_beat_snare * 0.07 + u_energy_flux * 0.04 + u_lens_shock * 0.05, 0.0, 0.20);
+        finalColor = mix(finalColor, vec3(finalColor.r, finalColor.b, finalColor.g), chromaticSpread * 0.7);
     }
 
-    // Band 16 (Air Low): Cosmic particle dust / starlight scatter — exclusive
+    // Band 16 (Air Low): Cosmic particle dust / starlight scatter — hash-based procedural stars
     if (u_fx_mode == 3) {
-        float particle = sin(uv.x * 50.0 + u_audio_time * 1.0) * cos(uv.y * 50.0 - u_audio_time * 0.8);
-        float pGlow = smoothstep(0.94, 0.99, particle);
-        if (pGlow > 0.0) {
-            vec3 starCol = getDynamicPalette(particle + u_audio_time * 0.02 + u_bands[14] * 0.15, u_color_base.x);
-            // Band 16: starlight scatter amplitude
-            finalColor += starCol * pGlow * 1.4 * (u_bands[16] * 1.5 + 0.4 + u_bands[17] * 0.6);
+        float cellSize = 0.035 + u_spectral_flatness * 0.015;
+        vec2 cellId = floor(uv / cellSize);
+        vec2 cellUV = fract(uv / cellSize);
+        vec2 hashIn = cellId + vec2(127.1, 311.7);
+        float h1 = fract(sin(dot(hashIn, vec2(127.1, 311.7))) * 43758.5453);
+        float h2 = fract(sin(dot(hashIn + 1.0, vec2(269.5, 183.3))) * 43758.5453);
+        float h3 = fract(sin(dot(hashIn + 2.0, vec2(419.2, 371.9))) * 43758.5453);
+        vec2 starPos = vec2(h1, h2);
+        float dist = length(cellUV - starPos);
+        float twinkle = 0.55 + 0.45 * sin(u_audio_time * (2.0 + h3 * 6.0) + h1 * 6.2831);
+        float starRadius = (0.08 + h3 * 0.10) * twinkle * (1.0 + u_bands[16] * 1.2 + u_bands[17] * 0.8);
+        float star = smoothstep(starRadius, 0.0, dist);
+        float brightness = (0.5 + h2 * 0.5) * (1.0 + u_bands[16] * 1.5 + u_audio_air * 1.0 + u_beat_snare * 0.6);
+        if (star > 0.0) {
+            vec3 starCol = getDynamicPalette(h1 + h3 * 0.5 + u_audio_time * 0.012 + u_beat_phase * 0.12, u_color_base.x);
+            finalColor += starCol * star * brightness;
         }
     }
 
