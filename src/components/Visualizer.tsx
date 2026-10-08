@@ -1,5 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { vertexShaderSource, fragmentShaderSource } from '../shaders/fractal';
+import { bloomVertexShaderSource, bloomFragmentShaderSource } from '../shaders/bloom';
+import { Dampener } from '../utils/Dampener';
 
 export interface AudioMetrics {
   sub: number;
@@ -96,7 +98,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const gl = canvas.getContext('webgl', {
+    const gl = canvas.getContext('webgl2', {
       preserveDrawingBuffer: false,
       antialias: false,
       powerPreference: 'high-performance'
@@ -135,6 +137,18 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       console.error('Program link error:', gl.getProgramInfoLog(program));
       return;
     }
+
+    const bloomVS = createShader(gl.VERTEX_SHADER, bloomVertexShaderSource);
+    const bloomFS = createShader(gl.FRAGMENT_SHADER, bloomFragmentShaderSource);
+    const bloomProgram = gl.createProgram();
+    if (bloomVS && bloomFS && bloomProgram) {
+      gl.attachShader(bloomProgram, bloomVS);
+      gl.attachShader(bloomProgram, bloomFS);
+      gl.linkProgram(bloomProgram);
+    }
+    
+    const frameBuffer = gl.createFramebuffer();
+    const renderTexture = gl.createTexture();
     
     gl.useProgram(program);
     programRef.current = program;
@@ -151,36 +165,15 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     locationsRef.current = {
       u_resolution: gl.getUniformLocation(program, 'u_resolution'),
       u_time: gl.getUniformLocation(program, 'u_time'),
-      u_audio_time: gl.getUniformLocation(program, 'u_audio_time'),
-      u_zoom: gl.getUniformLocation(program, 'u_zoom'),
-      u_offset: gl.getUniformLocation(program, 'u_offset'),
-      u_c: gl.getUniformLocation(program, 'u_c'),
-      u_iterations: gl.getUniformLocation(program, 'u_iterations'),
-      u_color_base: gl.getUniformLocation(program, 'u_color_base'),
-      u_audio_low: gl.getUniformLocation(program, 'u_audio_low'),
-      u_audio_mid: gl.getUniformLocation(program, 'u_audio_mid'),
-      u_audio_high: gl.getUniformLocation(program, 'u_audio_high'),
-      u_audio_sub: gl.getUniformLocation(program, 'u_audio_sub'),
-      u_audio_kick: gl.getUniformLocation(program, 'u_audio_kick'),
-      u_audio_snare: gl.getUniformLocation(program, 'u_audio_snare'),
-      u_audio_pres: gl.getUniformLocation(program, 'u_audio_pres'),
-      u_audio_treb: gl.getUniformLocation(program, 'u_audio_treb'),
-      u_audio_air: gl.getUniformLocation(program, 'u_audio_air'),
-      u_bands: gl.getUniformLocation(program, 'u_bands'),
-      u_spectral_centroid: gl.getUniformLocation(program, 'u_spectral_centroid'),
-      u_spectral_flatness: gl.getUniformLocation(program, 'u_spectral_flatness'),
-      u_energy_flux: gl.getUniformLocation(program, 'u_energy_flux'),
-      u_beat_kick: gl.getUniformLocation(program, 'u_beat_kick'),
-      u_beat_snare: gl.getUniformLocation(program, 'u_beat_snare'),
-      u_geometry_mode: gl.getUniformLocation(program, 'u_geometry_mode'),
-      u_fx_mode: gl.getUniformLocation(program, 'u_fx_mode'),
-      u_kaleidoscope_folds: gl.getUniformLocation(program, 'u_kaleidoscope_folds'),
-      u_rot_speed: gl.getUniformLocation(program, 'u_rot_speed'),
-      u_glow_intensity: gl.getUniformLocation(program, 'u_glow_intensity'),
-      u_lens_shock: gl.getUniformLocation(program, 'u_lens_shock'),
-      u_audio_history: gl.getUniformLocation(program, 'u_audio_history'),
-      u_history_offset: gl.getUniformLocation(program, 'u_history_offset'),
-      u_beat_phase: gl.getUniformLocation(program, 'u_beat_phase'),
+      u_lowFreq: gl.getUniformLocation(program, 'u_lowFreq'),
+      u_midFreq: gl.getUniformLocation(program, 'u_midFreq'),
+      u_highFreq: gl.getUniformLocation(program, 'u_highFreq'),
+    };
+    
+    const bloomLocations = {
+      u_texture: gl.getUniformLocation(bloomProgram!, 'u_texture'),
+      u_resolution: gl.getUniformLocation(bloomProgram!, 'u_resolution'),
+      u_bloom_intensity: gl.getUniformLocation(bloomProgram!, 'u_bloom_intensity')
     };
 
     // 256x64 8-Bit Luminance Audio History Circular Ring Buffer Texture (Power-of-Two WebGL 1.0)
@@ -215,6 +208,16 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         canvas.width = Math.max(320, Math.floor(rawW * scale));
         canvas.height = Math.max(240, Math.floor(rawH * scale));
         gl.viewport(0, 0, canvas.width, canvas.height);
+        
+        gl.bindTexture(gl.TEXTURE_2D, renderTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, canvas.width, canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, renderTexture, 0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       }
     };
     
@@ -254,6 +257,10 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     let lastMetricsEmitTime = 0;
     let audioTime = 0;
 
+    const lowDampener = new Dampener(0, 10.0);
+    const midDampener = new Dampener(0, 10.0);
+    const highDampener = new Dampener(0, 10.0);
+
     const render = () => {
       const gl = glRef.current;
       const program = programRef.current;
@@ -278,6 +285,10 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       let isKickBeat = false, isSnareBeat = false;
       const rawBands = new Float32Array(18);
 
+      let dampenedLow = lowDampener.getValue();
+      let dampenedMid = midDampener.getValue();
+      let dampenedHigh = highDampener.getValue();
+
       if (currentProps.analyser) {
         if (!dataArray || dataArray.length !== currentProps.analyser.frequencyBinCount) {
           dataArray = new Uint8Array(currentProps.analyser.frequencyBinCount);
@@ -289,6 +300,30 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         let weightedFreqSum = 0;
         let totalEnergySum = 0;
         let logEnergySum = 0;
+        
+        // Custom Bands logic: Low (20-250Hz), Mid (250-4000Hz), High (4000Hz+)
+        const sampleRate = currentProps.analyser.context.sampleRate || 44100;
+        const binWidth = (sampleRate / 2) / currentProps.analyser.frequencyBinCount;
+        
+        const bin250 = Math.ceil(250 / binWidth);
+        const bin4000 = Math.ceil(4000 / binWidth);
+        
+        let lowEnergy = 0, midEnergy = 0, highEnergy = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+           const val = dataArray[i] * inv255;
+           if (i <= bin250) lowEnergy += val;
+           else if (i <= bin4000) midEnergy += val;
+           else highEnergy += val;
+        }
+        
+        // Normalize energy
+        lowEnergy /= Math.max(1, bin250);
+        midEnergy /= Math.max(1, bin4000 - bin250);
+        highEnergy /= Math.max(1, dataArray.length - bin4000);
+
+        dampenedLow = lowDampener.update(lowEnergy, dt);
+        dampenedMid = midDampener.update(midEnergy, dt);
+        dampenedHigh = highDampener.update(highEnergy, dt);
         let totalSpectralFlux = 0;
         let activeBinCount = 0;
 
@@ -456,7 +491,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       // Controlled camera excursion preventing geometry from blowing out of bounds
       camSpring = Math.max(-0.40, Math.min(0.45, camSpring));
 
-      const effectiveZoom = currentProps.zoom * (1.0 + camSpring * 0.12);
+      const effectiveZoom = currentProps.zoom * (1.0 + camSpring * 0.12) * (1.0 - dampenedLow * 0.5);
 
       // Broadcast real-time 18-band metrics to isolated subscriber HUDs (~30 FPS)
       if (nowMs - lastMetricsEmitTime >= 33) {
@@ -484,56 +519,35 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         }
       }
 
-      gl.uniform1f(locs.u_time, time);
-      gl.uniform1f(locs.u_audio_time, audioTime);
-      gl.uniform1f(locs.u_zoom, Math.max(0.08, effectiveZoom));
-      gl.uniform2f(locs.u_offset, currentProps.offsetX, currentProps.offsetY);
-      gl.uniform2f(locs.u_c, currentProps.juliaC.x, currentProps.juliaC.y);
-      gl.uniform1i(locs.u_iterations, currentProps.iterations);
-      gl.uniform3f(locs.u_color_base, currentProps.colorBase.h, currentProps.colorBase.s, currentProps.colorBase.l);
-      
-      gl.uniform1f(locs.u_audio_low, smoothedLow);
-      gl.uniform1f(locs.u_audio_mid, smoothedMid);
-      gl.uniform1f(locs.u_audio_high, smoothedHigh);
-      
-      // Pass all continuous legacy metrics
-      gl.uniform1f(locs.u_audio_sub, smoothedSub);
-      gl.uniform1f(locs.u_audio_kick, smoothedKick);
-      gl.uniform1f(locs.u_audio_snare, smoothedSnare);
-      gl.uniform1f(locs.u_audio_pres, smoothedPres);
-      gl.uniform1f(locs.u_audio_treb, smoothedTreb);
-      gl.uniform1f(locs.u_audio_air, smoothedAir);
+      if (locs.u_time) gl.uniform1f(locs.u_time, time);
+      if (locs.u_lowFreq) gl.uniform1f(locs.u_lowFreq, dampenedLow);
+      if (locs.u_midFreq) gl.uniform1f(locs.u_midFreq, dampenedMid);
+      if (locs.u_highFreq) gl.uniform1f(locs.u_highFreq, dampenedHigh);
 
-      // Pass 18-band Mel spectrum & high-level acoustic descriptors
-      if (locs.u_bands) {
-        gl.uniform1fv(locs.u_bands, smoothedBands);
-      }
-      if (locs.u_spectral_centroid) {
-        gl.uniform1f(locs.u_spectral_centroid, smoothedCentroid);
-      }
-      if (locs.u_spectral_flatness) {
-        gl.uniform1f(locs.u_spectral_flatness, smoothedFlatness);
-      }
-      if (locs.u_energy_flux) {
-        gl.uniform1f(locs.u_energy_flux, smoothedFlux);
-      }
-
-      gl.uniform1f(locs.u_beat_kick, kickTrigger);
-      gl.uniform1f(locs.u_beat_snare, snareTrigger);
-      if (locs.u_beat_phase) {
-        gl.uniform1f(locs.u_beat_phase, beatPhase);
-      }
-      if (locs.u_lens_shock) {
-        gl.uniform1f(locs.u_lens_shock, lensShock);
-      }
-
-      gl.uniform1i(locs.u_geometry_mode, currentProps.geometryMode);
-      gl.uniform1i(locs.u_fx_mode, currentProps.fxMode);
-      gl.uniform1f(locs.u_kaleidoscope_folds, currentProps.kaleidoscopeFolds);
-      gl.uniform1f(locs.u_rot_speed, currentProps.rotSpeed);
-      gl.uniform1f(locs.u_glow_intensity, currentProps.glowIntensity);
-
+      // Render to FBO first
+      gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuffer);
+      gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+      // Render FBO to screen with bloom shader
+      if (bloomProgram) {
+        gl.useProgram(bloomProgram);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, renderTexture);
+        gl.uniform1i(bloomLocations.u_texture, 0);
+        if (canvasRef.current) {
+           gl.uniform2f(bloomLocations.u_resolution, canvasRef.current.width, canvasRef.current.height);
+        }
+        // Map dampened highFreq to bloom intensity
+        gl.uniform1f(bloomLocations.u_bloom_intensity, dampenedHigh * 3.0);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        
+        // Restore main program for next frame
+        gl.useProgram(program);
+      } else {
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
 
       if (propsRef.current.onRenderFrame && canvasRef.current) {
         propsRef.current.onRenderFrame(canvasRef.current);
@@ -557,6 +571,11 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         }
         if (vertexShader) gl.deleteShader(vertexShader);
         if (fragmentShader) gl.deleteShader(fragmentShader);
+        if (bloomVS) gl.deleteShader(bloomVS);
+        if (bloomFS) gl.deleteShader(bloomFS);
+        if (bloomProgram) gl.deleteProgram(bloomProgram);
+        if (frameBuffer) gl.deleteFramebuffer(frameBuffer);
+        if (renderTexture) gl.deleteTexture(renderTexture);
         if (positionBuffer) gl.deleteBuffer(positionBuffer);
         if (audioTexture) gl.deleteTexture(audioTexture);
       }
