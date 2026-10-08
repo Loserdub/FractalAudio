@@ -18,10 +18,10 @@ uniform float u_highFreq;
 
 out vec4 fragColor;
 
-#define MAX_STEPS 100
+#define MAX_STEPS 70
 #define MAX_DIST 10.0
 #define SURF_DIST 0.002
-#define ITERS 8
+#define ITERS 6
 
 // 2D Rotation matrix for camera and space manipulation
 mat2 rot(float a) {

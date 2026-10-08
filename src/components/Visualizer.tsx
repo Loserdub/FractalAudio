@@ -197,12 +197,13 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     // DPR Clamping and Max Dimension Capping to prevent GPU fill-rate exhaustion on 1440p / 4K / Retina screens
     const handleResize = () => {
       if (canvas && gl) {
-        const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
+        // Limit DPR to 1.0 (no retina rendering) to save fill-rate
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.0);
         const rawW = window.innerWidth * dpr;
         const rawH = window.innerHeight * dpr;
         
-        // Cap max rendering dimensions to 1080p equivalent (max 1920 width or 1080 height)
-        const maxDim = 1920;
+        // Cap max rendering dimensions to 720p equivalent
+        const maxDim = 1280;
         const scale = Math.min(1.0, maxDim / Math.max(rawW, rawH));
         
         canvas.width = Math.max(320, Math.floor(rawW * scale));
