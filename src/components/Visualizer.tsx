@@ -22,24 +22,24 @@ export interface AudioMetrics {
 
 // 18 ISO/Mel-Spaced Frequency Bands with Custom Ballistics & Acoustic Weights
 const BAND_DEFINITIONS = [
-  { name: 'Sub 1', start: 1, end: 2, attack: 38.0, decay: 5.5, weight: 1.4 },      // 20-45 Hz
-  { name: 'Sub 2', start: 3, end: 4, attack: 38.0, decay: 5.8, weight: 1.3 },      // 45-85 Hz
-  { name: 'Kick 1', start: 5, end: 6, attack: 44.0, decay: 6.2, weight: 1.25 },    // 85-130 Hz
-  { name: 'Kick 2', start: 7, end: 9, attack: 44.0, decay: 6.5, weight: 1.2 },     // 130-195 Hz
-  { name: 'Bass Low', start: 10, end: 13, attack: 36.0, decay: 6.8, weight: 1.15 }, // 195-280 Hz
-  { name: 'Bass Mid', start: 14, end: 19, attack: 34.0, decay: 7.0, weight: 1.1 },  // 280-410 Hz
-  { name: 'Mid Low', start: 20, end: 27, attack: 32.0, decay: 7.2, weight: 1.1 },   // 410-580 Hz
-  { name: 'Mid Warmth', start: 28, end: 38, attack: 32.0, decay: 7.2, weight: 1.15 },// 580-820 Hz
-  { name: 'Snare Body', start: 39, end: 54, attack: 42.0, decay: 7.5, weight: 1.2 }, // 820-1.16 kHz
-  { name: 'Vocal Low', start: 55, end: 77, attack: 34.0, decay: 7.5, weight: 1.25 },// 1.16-1.65 kHz
-  { name: 'Vocal Mid', start: 78, end: 110, attack: 34.0, decay: 7.8, weight: 1.35 },// 1.65-2.37 kHz
-  { name: 'Snare Snap', start: 111, end: 155, attack: 42.0, decay: 7.8, weight: 1.45 },// 2.37-3.34 kHz
-  { name: 'Pres Low', start: 156, end: 220, attack: 30.0, decay: 8.0, weight: 1.55 }, // 3.34-4.74 kHz
-  { name: 'Pres High', start: 221, end: 310, attack: 30.0, decay: 8.0, weight: 1.7 }, // 4.74-6.68 kHz
-  { name: 'Treb Low', start: 311, end: 440, attack: 28.0, decay: 8.2, weight: 1.85 }, // 6.68-9.47 kHz
-  { name: 'Treb High', start: 441, end: 620, attack: 28.0, decay: 8.5, weight: 2.05 }, // 9.47-13.35 kHz
-  { name: 'Air Low', start: 621, end: 775, attack: 26.0, decay: 8.8, weight: 2.3 },   // 13.35-16.7 kHz
-  { name: 'Air High', start: 776, end: 930, attack: 26.0, decay: 9.0, weight: 2.6 }   // 16.7-20.0 kHz
+  { name: 'Sub 1', start: 1, end: 2, attack: 14.0, decay: 3.5, weight: 1.4 },      // 20-45 Hz
+  { name: 'Sub 2', start: 3, end: 4, attack: 14.0, decay: 3.8, weight: 1.3 },      // 45-85 Hz
+  { name: 'Kick 1', start: 5, end: 6, attack: 16.0, decay: 4.2, weight: 1.25 },    // 85-130 Hz
+  { name: 'Kick 2', start: 7, end: 9, attack: 16.0, decay: 4.5, weight: 1.2 },     // 130-195 Hz
+  { name: 'Bass Low', start: 10, end: 13, attack: 13.0, decay: 4.8, weight: 1.15 }, // 195-280 Hz
+  { name: 'Bass Mid', start: 14, end: 19, attack: 12.0, decay: 5.0, weight: 1.1 },  // 280-410 Hz
+  { name: 'Mid Low', start: 20, end: 27, attack: 11.0, decay: 5.2, weight: 1.1 },   // 410-580 Hz
+  { name: 'Mid Warmth', start: 28, end: 38, attack: 11.0, decay: 5.2, weight: 1.15 },// 580-820 Hz
+  { name: 'Snare Body', start: 39, end: 54, attack: 16.0, decay: 5.5, weight: 1.2 }, // 820-1.16 kHz
+  { name: 'Vocal Low', start: 55, end: 77, attack: 12.0, decay: 5.5, weight: 1.25 },// 1.16-1.65 kHz
+  { name: 'Vocal Mid', start: 78, end: 110, attack: 12.0, decay: 5.8, weight: 1.35 },// 1.65-2.37 kHz
+  { name: 'Snare Snap', start: 111, end: 155, attack: 16.0, decay: 5.8, weight: 1.45 },// 2.37-3.34 kHz
+  { name: 'Pres Low', start: 156, end: 220, attack: 10.0, decay: 6.0, weight: 1.55 }, // 3.34-4.74 kHz
+  { name: 'Pres High', start: 221, end: 310, attack: 10.0, decay: 6.0, weight: 1.7 }, // 4.74-6.68 kHz
+  { name: 'Treb Low', start: 311, end: 440, attack: 9.0, decay: 6.2, weight: 1.85 }, // 6.68-9.47 kHz
+  { name: 'Treb High', start: 441, end: 620, attack: 9.0, decay: 6.5, weight: 2.05 }, // 9.47-13.35 kHz
+  { name: 'Air Low', start: 621, end: 775, attack: 8.0, decay: 6.8, weight: 2.3 },   // 13.35-16.7 kHz
+  { name: 'Air High', start: 776, end: 930, attack: 8.0, decay: 7.0, weight: 2.6 }   // 16.7-20.0 kHz
 ];
 
 // Lightweight listener subscription system to avoid root React state re-rendering
@@ -166,7 +166,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_audio_pres: gl.getUniformLocation(program, 'u_audio_pres'),
       u_audio_treb: gl.getUniformLocation(program, 'u_audio_treb'),
       u_audio_air: gl.getUniformLocation(program, 'u_audio_air'),
-      u_bands: gl.getUniformLocation(program, 'u_bands'),
+      u_bands: gl.getUniformLocation(program, 'u_bands[0]'),
       u_spectral_centroid: gl.getUniformLocation(program, 'u_spectral_centroid'),
       u_spectral_flatness: gl.getUniformLocation(program, 'u_spectral_flatness'),
       u_energy_flux: gl.getUniformLocation(program, 'u_energy_flux'),

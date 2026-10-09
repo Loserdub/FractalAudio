@@ -283,11 +283,15 @@ float mapJulia3D(vec3 p, out float trap) {
     
     // Stable quaternion constant C with responsive harmonic audio orbit
     vec4 c = vec4(
-        u_c.x * 0.45 + cos(u_audio_time * 0.22) * (0.035 + u_audio_mid * 0.045), 
-        u_c.y * 0.45 + sin(u_audio_time * 0.18) * (0.035 + u_audio_pres * 0.045), 
+        u_c.x + cos(u_audio_time * 0.22) * (0.035 + u_audio_mid * 0.045), 
+        u_c.y + sin(u_audio_time * 0.18) * (0.035 + u_audio_pres * 0.045), 
         sin(u_audio_time * 0.26 + u_audio_sub * 0.6) * (0.08 + u_audio_kick * 0.07), 
         cos(u_audio_time * 0.22 + u_audio_treb * 0.6) * (0.08 + u_audio_air * 0.07)
     );
+    
+    // Rotate the 4D initial coordinate based on audio momentum to expose hidden intricate textures
+    float rT = u_audio_time * 0.12 + u_bands[7] * 0.3;
+    z.xw = mat2(cos(rT), -sin(rT), sin(rT), cos(rT)) * z.xw;
     float dr2 = 1.0;
     float r2 = 0.0;
     trap = 1.0;
@@ -386,7 +390,7 @@ float mapSriYantra(vec3 p, out float trap) {
     float tri = max(abs(q.x) * 0.866 + q.y * 0.5, -q.y) - (0.40 + u_bands[2] * 0.15 + u_bands[1] * 0.12);
     
     trap = r;
-    return (max(min(ring1, min(ring2, ring3)), abs(pScaled.z) - 0.10) / 1.4);
+    return (max(min(min(ring1, min(ring2, ring3)), tri), abs(pScaled.z) - 0.10) / 1.4);
 }
 
 // Metatron's Cube & Flower of Life SDF
@@ -437,12 +441,12 @@ float mapPrismPyramid(vec3 p, out float trap) {
     vec3 q = p * 1.5;
     q.y += 0.35;
     
-    float pyr = max(abs(q.x) + q.y, max(abs(q.z) + q.y, -q.y - 0.8));
+    float pyr = max(abs(q.x) + q.y, max(abs(q.z) + q.y, -q.y - 0.8)) * 0.7071;
     
     // Band 12: crystal size — pres low exclusive
-    vec3 crystalP = q - vec3(0.0, 0.8 + sin(u_audio_time * 0.45 + u_bands[1] * 0.4) * 0.20 + u_bands[2] * 0.20 + u_beat_kick * 0.14, 0.0);
+    vec3 crystalP = q - vec3(0.0, 0.2 + sin(u_audio_time * 0.45 + u_bands[1] * 0.4) * 0.20 + u_bands[2] * 0.20 + u_beat_kick * 0.14, 0.0);
     crystalP = rotateY(u_audio_time * 0.45 + u_bands[7] * 0.9 + u_bands[9] * 0.5) * crystalP;
-    float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) - (0.16 + u_bands[12] * 0.20 + u_bands[16] * 0.12);
+    float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) * 0.5773 - (0.16 + u_bands[12] * 0.20 + u_bands[16] * 0.12);
     
     trap = length(crystalP);
     return (min(pyr, crystal) / 1.5);
@@ -649,8 +653,8 @@ void main() {
 
     // Band 11 (Snare Snap): Chromatic glitch flare — ONLY fires when FX mode 2 is selected
     if (u_fx_mode == 2) {
-        float chromaticSpread = clamp(u_bands[11] * 0.10 + u_beat_snare * 0.07 + u_energy_flux * 0.04 + u_lens_shock * 0.05, 0.0, 0.20);
-        finalColor = mix(finalColor, vec3(finalColor.r, finalColor.b, finalColor.g), chromaticSpread * 0.7);
+        float chromaticSpread = clamp(u_bands[11] * 0.40 + u_beat_snare * 0.25 + u_energy_flux * 0.15 + u_lens_shock * 0.15, 0.0, 1.0);
+        finalColor = mix(finalColor, vec3(finalColor.g, finalColor.b, finalColor.r), chromaticSpread);
     }
 
     // Band 16 (Air Low): Cosmic particle dust / starlight scatter — hash-based procedural stars
