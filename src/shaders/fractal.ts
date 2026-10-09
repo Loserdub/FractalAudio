@@ -311,9 +311,7 @@ float mapJulia3D(vec3 p, out float trap) {
         ) + c;
     }
     float dEst = (r2 > 1.0) ? (0.5 * sqrt(r2 / max(1e-4, dr2)) * log(r2)) : 0.0;
-    float dBound = length(p) - 1.4;
-    float dist = (dBound > 0.0) ? max(dBound * 0.7, dEst) : dEst;
-    return max(0.0001, dist);
+    return max(0.0001, dEst);
 }
 
 // 3D Mandelbulb SDF
@@ -481,12 +479,11 @@ float mapScene(vec3 p, out float trap) {
     else if (u_geometry_mode == 8) d = mapCosmicTunnel(p, trap);
     else d = mapJulia3D(p, trap);
 
-    // Surface-only detail optimization:
-    // Only calculate expensive trigonometric micro-displacements and acoustic history
-    // texture2D lookups when approaching surface boundaries (d < 0.05).
-    // In empty space (d >= 0.05), skip it entirely!
-    if (d < 0.05) {
-        d += getMicroDisplacement(p);
+    // Surface detail optimization: Smoothly blend expensive micro-displacements 
+    // to prevent distance-field discontinuities which cause blown-out phantom boundaries
+    float dispBlend = smoothstep(0.15, 0.0, d);
+    if (dispBlend > 0.0) {
+        d += getMicroDisplacement(p) * dispBlend;
     }
     return d;
 }
