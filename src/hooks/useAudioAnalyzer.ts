@@ -6,6 +6,7 @@ export const useAudioAnalyzer = () => {
   const [audioMode, setAudioMode] = useState<AudioMode>('none');
   const [isListening, setIsListening] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [analysisRevision, setAnalysisRevision] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(0.8);
@@ -38,8 +39,8 @@ export const useAudioAnalyzer = () => {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const ctx = new AudioCtx();
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 2048;
-      // Fast transient response to avoid artificial pre-lag
+      analyser.fftSize = ctx.sampleRate > 50000 ? 4096 : 2048;
+      // Leave transient detail for the visualizer's attack and release envelopes.
       analyser.smoothingTimeConstant = 0.05;
 
       const dest = ctx.createMediaStreamDestination();
@@ -79,6 +80,7 @@ export const useAudioAnalyzer = () => {
 
     setIsListening(false);
     setIsPlaying(false);
+    setAnalysisRevision(revision => revision + 1);
   }, []);
 
   // 1. SAMPLE-ACCURATE LOOKAHEAD GENERATIVE DEMO SYNTH SEQUENCER
@@ -215,7 +217,7 @@ export const useAudioAnalyzer = () => {
     if (!mediaElementSourceRef.current) {
       const source = ctx.createMediaElementSource(audio);
       source.connect(analyser);
-      analyser.connect(ctx.destination);
+      source.connect(ctx.destination);
       mediaElementSourceRef.current = source;
     }
 
@@ -283,6 +285,7 @@ export const useAudioAnalyzer = () => {
     if (audioMode === 'file' && audioElementRef.current) {
       audioElementRef.current.currentTime = seconds;
       setCurrentTime(seconds);
+      setAnalysisRevision(revision => revision + 1);
     }
   }, [audioMode]);
 
@@ -318,6 +321,7 @@ export const useAudioAnalyzer = () => {
     seek,
     setVolume,
     analyser: analyserRef.current,
+    analysisRevision,
     audioStream: audioDestinationRef.current?.stream
   };
 };

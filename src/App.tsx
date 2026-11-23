@@ -80,6 +80,7 @@ export default function App() {
     seek,
     setVolume,
     analyser,
+    analysisRevision,
     audioStream
   } = useAudioAnalyzer();
 
@@ -108,8 +109,8 @@ export default function App() {
   // 3D Raymarching & Geometry States
   const [geometryMode, setGeometryModeState] = useState(3); // Default: 3D Ink Flow
   const [fxMode, setFxModeState] = useState(1); // Default: Cyber Laser Grid
-  const [kaleidoscopeFolds, setKaleidoscopeFoldsState] = useState(6); // Default: 6-fold
-  const [rotSpeed, setRotSpeedState] = useState(0.80); // Confident, rhythmic club motion speed
+  const [kaleidoscopeFolds, setKaleidoscopeFoldsState] = useState(0);
+  const [rotSpeed, setRotSpeedState] = useState(0.4);
   const [glowIntensity, setGlowIntensityState] = useState(1.2);
 
   // Parameter Change Wrappers for Recording Session Automation
@@ -212,7 +213,8 @@ export default function App() {
     >
       <Visualizer
         canvasRef={canvasRef}
-        analyser={analyser}
+        analyser={isPlaying ? analyser : null}
+        analysisRevision={analysisRevision}
         zoom={zoom}
         offsetX={offsetX}
         offsetY={offsetY}

@@ -790,7 +790,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                 <span className="text-lime-400 font-bold tabular-nums">{rotSpeed.toFixed(2)}x</span>
               </div>
               <span className="text-[9px] font-mono text-white/40 block leading-tight">
-                Controls real-time rotation, particle drift, and phase evolution
+                Sets the pace of the orbit and background drift
               </span>
               <input
                 type="range"
@@ -803,7 +803,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
               />
               <div className="grid grid-cols-4 gap-1 pt-0.5">
                 {[
-                  { val: 0.0, label: '0x Freeze' },
+                  { val: 0.0, label: '0x Still Orbit' },
                   { val: 0.4, label: '0.4x Ambient' },
                   { val: 0.8, label: '0.8x Club' },
                   { val: 1.25, label: '1.25x Dynamic' }
@@ -847,7 +847,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                 <span className="text-lime-400 font-bold tabular-nums">{sensitivity.toFixed(1)}x</span>
               </div>
               <span className="text-[9px] font-mono text-white/40 block leading-tight">
-                Transient gain clamped to prevent off-screen expansion
+                Sets how far the geometry moves in response to sound
               </span>
               <input
                 type="range"

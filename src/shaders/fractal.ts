@@ -9,8 +9,7 @@ export const fragmentShaderSource = `
 precision highp float;
 
 uniform vec2 u_resolution;
-uniform float u_time;
-uniform float u_audio_time;   // Kinetic Audio Momentum / Phase Velocity Accumulator
+uniform float u_motion_time;
 uniform float u_zoom;
 uniform vec2 u_offset;
 uniform vec2 u_c;
@@ -39,8 +38,7 @@ uniform float u_energy_flux;        // Transient onset energy
 // Beat Transient Uniforms
 uniform float u_beat_kick;   // Smoothed kick transient (0.0 - 1.0)
 uniform float u_beat_snare;  // Smoothed snare transient (0.0 - 1.0)
-uniform float u_lens_shock;  // Viscoelastic subwoofer acoustic lens shock (0.0 - 1.0)
-uniform float u_beat_phase;  // Normalized 0.0→1.0 phase within the current beat cycle (EMA BPM)
+uniform vec4 u_kick_waves;   // Age and strength of the two most recent kick waves
 
 // 2D Temporal Acoustic Spectrogram History Ring Buffer (256 bins x 64 history slices)
 uniform sampler2D u_audio_history;
@@ -50,7 +48,6 @@ uniform float u_history_offset; // Circular ring buffer head offset (0.0 to 1.0)
 uniform int u_geometry_mode;        // 0: Classic 2D Liquid, 1: 3D Mandelbulb, 2: 3D Julia, 3: 3D Ink Flow, 4: Sri Yantra, 5: Metatron, 6: Torus Knot, 7: Pyramid, 8: Tunnel
 uniform int u_fx_mode;              // 0: None, 1: Cyber Grid, 2: Chromatic Glitch, 3: Particle Dust
 uniform float u_kaleidoscope_folds; // 0, 4, 6, 8, 12, 16
-uniform float u_rot_speed;
 uniform float u_glow_intensity;
 
 // HSL to RGB conversion with luminance capping
@@ -122,20 +119,22 @@ vec2 applyKaleidoscope(vec2 p, float folds) {
     return vec2(cos(angle), sin(angle)) * radius;
 }
 
-// Temporal Acoustic Wave: Samples the 2D FFT history texture along spatial depth & temporal lag
+// Read the spectrum at a fixed age, with older audio farther from the center.
+float readAudioHistory(float frequency, float age) {
+    return texture2D(u_audio_history, vec2(frequency, fract(u_history_offset - age))).r;
+}
+
 float getTemporalAcousticWave(vec3 p, float freqOffset) {
-    // Map spatial distance to historical time coordinate with circular ring buffer wrapping
-    float timeLag = fract(length(p) * 0.12 - u_audio_time * 0.10 + u_history_offset);
-    float freqNorm = clamp(freqOffset + u_spectral_centroid * 0.25, 0.02, 0.98);
-    float wave = texture2D(u_audio_history, vec2(freqNorm, timeLag)).r;
-    return wave;
+    float age = clamp(0.035 + length(p) * 0.12, 0.035, 0.92);
+    float frequency = clamp(freqOffset + u_spectral_centroid * 0.25, 0.02, 0.98);
+    return readAudioHistory(frequency, age);
 }
 
 // Cymatic Chladni Standing Wave Resonance Generator
 // Band 6 (Mid Low 410-580 Hz): Vibrational mode M order
 float chladniResonance(vec3 p) {
-    float n = 2.0 + floor(u_spectral_centroid * 4.0); // Mode N (2..6) driven by timbral centroid
-    float m = 3.0 + floor(u_bands[6] * 4.0);           // Mode M (3..7) — Band 6 exclusive control
+    float n = 2.0 + u_spectral_centroid * 4.0;
+    float m = 3.0 + u_bands[6] * 4.0;
     
     const float pi = 3.14159265359;
     float w1 = sin(n * pi * p.x) * sin(m * pi * p.y) - sin(m * pi * p.x) * sin(n * pi * p.y);
@@ -150,7 +149,7 @@ float chladniResonance(vec3 p) {
 // Band 17 (Air High, 16.7-20 kHz): Cyber surface micro-ripple sparkle
 float getMicroDisplacement(vec3 p) {
     // Band 17: Cyber surface micro-ripple — air sparkle control
-    float ripple = sin(p.x * 18.0 + u_audio_time * 0.9) * cos(p.y * 18.0 - u_audio_time * 0.7) * sin(p.z * 18.0);
+    float ripple = sin(p.x * 18.0 + u_motion_time * 0.9) * cos(p.y * 18.0 - u_motion_time * 0.7) * sin(p.z * 18.0);
     float baseRipple = ripple * (0.010 + u_bands[14] * 0.022 + u_bands[17] * 0.020);
     
     float cymatic = chladniResonance(p);
@@ -165,20 +164,20 @@ float getMicroDisplacement(vec3 p) {
 // CLASSIC 2D LIQUID JULIA FRACTAL RENDERER (18-Band Responsive Engine)
 // ----------------------------------------------------
 vec4 renderLiquidJulia2D(vec2 uv) {
-    // 1. Fluid 2D Rotation driven rhythmically by Mids, Snare, & Kinetic Audio Momentum
-    float angle = (u_bands[7] + u_bands[9]) * 0.15 + u_audio_snare * 0.12 + u_beat_snare * 0.10 + u_audio_time * 0.25;
+    // Steady rotation with a small twist from the midrange
+    float angle = u_motion_time * 0.32 + u_audio_mid * 0.38 + u_beat_snare * 0.06;
     mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
     
     // 2. Dynamic Scale / Zoom centered on u_offset safely bounded within screen limits
     float rUv = length(uv);
-    float historyWave2D = texture2D(u_audio_history, vec2(0.15, fract(rUv * 1.5 - u_audio_time * 0.08 + u_history_offset))).r;
-    float zoomFactor = (1.75 / max(0.2, u_zoom)) * (1.0 - (u_bands[0] + u_bands[1]) * 0.06 - u_audio_kick * 0.06 - u_beat_kick * 0.04 - historyWave2D * 0.035);
+    float historyWave2D = readAudioHistory(0.15, min(0.92, 0.035 + rUv * 0.55));
+    float zoomFactor = (1.75 / max(0.2, u_zoom)) * (1.0 - u_audio_sub * 0.18 - u_beat_kick * 0.09 - historyWave2D * 0.045);
     vec2 p = rot * (uv * zoomFactor) + u_offset;
     
     // 3. Harmonic Audio Orbit on Julia Constant C (lively, rhythmic breathing)
     vec2 c_mod = vec2(
-        cos(u_audio_time * 0.25 + (u_bands[0] + u_bands[1]) * 0.6) * (0.028 + u_audio_kick * 0.040 + u_beat_kick * 0.025),
-        sin(u_audio_time * 0.20 + (u_bands[14] + u_bands[16]) * 0.6) * (0.028 + u_audio_snare * 0.040 + u_beat_snare * 0.025)
+        cos(u_motion_time * 0.36 + u_audio_mid * 0.9) * (0.028 + u_audio_sub * 0.052),
+        sin(u_motion_time * 0.29 + u_audio_mid * 0.8) * (0.028 + u_audio_mid * 0.048)
     );
     vec2 c = u_c + c_mod;
     
@@ -208,8 +207,7 @@ vec4 renderLiquidJulia2D(vec2 uv) {
     if (iter < maxIter) {
         float t = smooth_iter / float(maxIter);
         // Palette position drifting with Spectral Centroid filter sweeps, Treble, & Air
-        // Beat-phase hue lock: palette advances within the beat cycle instead of purely with time
-        float palettePos = t * 0.8 + u_audio_time * 0.005 + u_beat_phase * 0.20
+        float palettePos = t * 0.8 + u_motion_time * 0.015 + u_beat_kick * 0.045
                          + u_spectral_centroid * 0.18 + u_bands[14] * 0.18 + u_bands[17] * 0.15;
         vec3 basePal = getDynamicPalette(palettePos, u_color_base.x);
         
@@ -217,7 +215,7 @@ vec4 renderLiquidJulia2D(vec2 uv) {
         float light = clamp(0.28 + (u_bands[1] + u_bands[3]) * 0.25 + u_audio_kick * 0.25 + u_beat_kick * 0.15 + u_color_base.z * 0.25 * (1.0 - t), 0.18, 0.95);
         color = basePal * light * (1.0 + u_glow_intensity * 0.35);
         // High-frequency treble shimmer with soft power response & Cymatic nodal shimmer
-        float cymatic2D = abs(sin(rUv * 24.0 - u_audio_time * 0.8) * cos(atan(uv.y, uv.x) * 6.0));
+        float cymatic2D = abs(sin(rUv * 24.0 - u_motion_time * 0.8) * cos(atan(uv.y, uv.x) * 6.0));
         color += basePal * (u_bands[15] * 0.25 + u_bands[17] * 0.22 + u_beat_snare * 0.15) * pow(t, 0.7);
         color += basePal * (cymatic2D * 0.18 * (u_bands[14] + u_bands[16]));
     } else {
@@ -229,11 +227,11 @@ vec4 renderLiquidJulia2D(vec2 uv) {
 
     // FX Mode 1: Cyber Laser Grid (2D screen-space overlay — uses uv so grid is always visible)
     if (u_fx_mode == 1) {
-        vec2 gridUV = uv * (4.0 + u_audio_kick * 2.0);
-        vec2 grid = abs(fract(gridUV - vec2(0.0, u_audio_time * 0.25 + u_audio_sub * 0.6)) - 0.5);
+        vec2 gridUV = uv * 4.5;
+        vec2 grid = abs(fract(gridUV - vec2(0.0, u_motion_time * 0.25)) - 0.5);
         float line = min(grid.x, grid.y);
-        float gridGlow = smoothstep(0.06, 0.0, line);
-        vec3 gridCol = getDynamicPalette(u_audio_time * 0.008 + 0.3 + u_audio_kick * 0.1, u_color_base.x);
+        float gridGlow = (1.0 - smoothstep(0.0, 0.06, line));
+        vec3 gridCol = getDynamicPalette(u_motion_time * 0.008 + 0.3 + u_audio_kick * 0.1, u_color_base.x);
         color += gridCol * gridGlow * 0.30 * (1.0 + u_audio_kick * 0.6 + u_audio_sub * 0.5);
     }
 
@@ -246,25 +244,26 @@ vec4 renderLiquidJulia2D(vec2 uv) {
     // FX Mode 3: Particle Dust — hash-based procedural star scatter
     if (u_fx_mode == 3) {
         // Tile the screen into cells and place one star per cell
-        float cellSize = 0.04 + u_spectral_flatness * 0.02;
-        vec2 cellId = floor(uv / cellSize);
-        vec2 cellUV = fract(uv / cellSize);
+        float cellSize = 0.05;
+        vec2 dustUV = uv + u_motion_time * vec2(0.012, -0.018);
+        vec2 cellId = floor(dustUV / cellSize);
+        vec2 cellUV = fract(dustUV / cellSize);
         // Cheap hash (deterministic per cell)
         vec2 hashIn = cellId + vec2(127.1, 311.7);
         float h1 = fract(sin(dot(hashIn, vec2(127.1, 311.7))) * 43758.5453);
         float h2 = fract(sin(dot(hashIn + 1.0, vec2(269.5, 183.3))) * 43758.5453);
         float h3 = fract(sin(dot(hashIn + 2.0, vec2(419.2, 371.9))) * 43758.5453);
         // Star center offset within the cell
-        vec2 starPos = vec2(h1, h2);
+        vec2 starPos = mix(vec2(0.23), vec2(0.77), vec2(h1, h2));
         float dist = length(cellUV - starPos);
         // Twinkle animation: each star has its own phase
-        float twinkle = 0.55 + 0.45 * sin(u_audio_time * (2.0 + h3 * 6.0) + h1 * 6.2831);
+        float twinkle = 0.66 + (0.22 + u_spectral_flatness * 0.10) * sin(u_motion_time * (2.0 + h3 * 6.0) + h1 * 6.2831);
         float starRadius = (0.08 + h3 * 0.10) * twinkle * (1.0 + u_audio_treb * 0.8 + u_audio_air * 0.6);
-        float star = smoothstep(starRadius, 0.0, dist);
+        float star = (1.0 - smoothstep(0.0, starRadius, dist));
         // Audio-reactive brightness: treble and air drive sparkle
         float brightness = (0.6 + h2 * 0.4) * (1.0 + u_audio_treb * 1.2 + u_audio_air * 0.8 + u_beat_snare * 0.5);
         if (star > 0.0) {
-            vec3 starCol = getDynamicPalette(h1 + h3 * 0.5 + u_audio_time * 0.015 + u_beat_phase * 0.12, u_color_base.x);
+            vec3 starCol = getDynamicPalette(h1 + h3 * 0.5 + u_motion_time * 0.015 + u_beat_kick * 0.035, u_color_base.x);
             color += starCol * star * brightness;
         }
     }
@@ -283,14 +282,14 @@ float mapJulia3D(vec3 p, out float trap) {
     
     // Stable quaternion constant C with responsive harmonic audio orbit
     vec4 c = vec4(
-        u_c.x + cos(u_audio_time * 0.22) * (0.035 + u_audio_mid * 0.045), 
-        u_c.y + sin(u_audio_time * 0.18) * (0.035 + u_audio_pres * 0.045), 
-        sin(u_audio_time * 0.26 + u_audio_sub * 0.6) * (0.08 + u_audio_kick * 0.07), 
-        cos(u_audio_time * 0.22 + u_audio_treb * 0.6) * (0.08 + u_audio_air * 0.07)
+        u_c.x + cos(u_motion_time * 0.22) * (0.035 + u_audio_mid * 0.045),
+        u_c.y + sin(u_motion_time * 0.18) * (0.035 + u_audio_pres * 0.045),
+        sin(u_motion_time * 0.26 + u_audio_sub * 0.6) * (0.08 + u_audio_kick * 0.07),
+        cos(u_motion_time * 0.22 + u_audio_treb * 0.6) * (0.08 + u_audio_air * 0.07)
     );
     
     // Rotate the 4D initial coordinate based on audio momentum to expose hidden intricate textures
-    float rT = u_audio_time * 0.12 + u_bands[7] * 0.3;
+    float rT = u_motion_time * 0.12 + u_bands[7] * 0.3;
     z.xw = mat2(cos(rT), -sin(rT), sin(rT), cos(rT)) * z.xw;
     float dr2 = 1.0;
     float r2 = 0.0;
@@ -323,11 +322,8 @@ float mapMandelbulb(vec3 p, out float trap) {
     float r = 0.0;
     trap = 1.0;
     
-    // Band 1 + Band 7: power modulation (6.0 to 16.0) with beat-phase snap attack
-    // Sharp transient attack at beat onset (phase 0→0.18), long exponential decay to next beat
-    float beatAttack = smoothstep(0.0, 0.18, u_beat_phase) * (1.0 - smoothstep(0.18, 1.0, u_beat_phase));
-    float power = 6.0 + u_bands[7] * 5.5 + u_bands[2] * 3.5 + u_bands[1] * 2.0
-                + u_beat_kick * 2.0 + beatAttack * u_beat_kick * 4.5;
+    // Reserve changes to the fractal exponent for slower gestures.
+    float power = 7.0 + u_audio_mid * 3.5 + u_audio_sub;
 
     for (int i = 0; i < 8; i++) {
         r = length(w);
@@ -335,14 +331,14 @@ float mapMandelbulb(vec3 p, out float trap) {
         
         trap = min(trap, r);
         
-        float theta = acos(w.z / r);
+        float theta = acos(clamp(w.z / max(1e-5, r), -1.0, 1.0));
         float phi = atan(w.y, w.x);
         dr = pow(r, power - 1.0) * power * dr + 1.0;
 
         float zr = pow(r, power);
         // Band 7: rotational azimuth momentum
-        theta = theta * power + u_audio_time * 0.14 + u_bands[7] * 0.38 + u_bands[1] * 0.25;
-        phi = phi * power + u_audio_time * 0.10 + u_bands[14] * 0.28 + u_bands[16] * 0.15;
+        theta = theta * power + u_motion_time * 0.14 + u_bands[7] * 0.38 + u_bands[1] * 0.25;
+        phi = phi * power + u_motion_time * 0.10 + u_bands[14] * 0.28 + u_bands[16] * 0.15;
 
         w = zr * vec3(sin(theta) * cos(phi), sin(phi) * sin(theta), cos(theta));
         w += p;
@@ -351,40 +347,48 @@ float mapMandelbulb(vec3 p, out float trap) {
     return max(0.0001, dist);
 }
 
-// 3D Organic Ink Flow / Fluid Dispersion SDF
-// Band 4 (Bass Low, 195-280 Hz): Fluid domain warp viscosity amplitude
-// Band 5 (Bass Mid, 280-410 Hz): Tendril braiding radius
-// Band 1 (Sub 2, 45-85 Hz): Core volume & mass expansion
-float mapInkFlow(vec3 p, out float trap) {
-    vec3 q = p;
-    // Band 4: Fluid domain warping viscosity — bass low exclusive
-    float warp = sin(q.x * 2.0 + u_audio_time * 0.35) * cos(q.y * 2.0 - u_bands[4] * 1.6) * sin(q.z * 2.0 + u_bands[1] * 1.2);
-    q += vec3(warp * (0.20 + u_bands[4] * 0.18));
+// A short-lived wave expands from the base of the shape across its surface.
+float kickWave(float distanceFromOrigin, vec2 wave) {
+    float front = 0.10 + wave.x * 7.3;
+    return wave.y * (1.0 - smoothstep(0.08, 0.44, abs(distanceFromOrigin - front)));
+}
 
-    // Band 1: Core geometry volume & mass expansion
-    float dCore = length(q) - (0.85 + u_bands[1] * 0.30 + u_bands[2] * 0.22 + u_beat_kick * 0.12);
-    
-    // Band 5: Tendril braiding radius
-    float dTendrils = sin(q.x * 2.6 + u_audio_time * 0.50) * cos(q.y * 2.6 + u_bands[5] * 1.0) * sin(q.z * 2.6 + u_bands[4] * 0.9) * (0.20 + u_bands[14] * 0.14 + u_bands[11] * 0.12);
-    
-    trap = length(q);
-    return max(0.0001, (dCore + dTendrils) * 0.65);
+float mapInkFlow(vec3 p, out float trap) {
+    float bass = clamp(u_audio_sub * 0.75 + u_audio_low * 0.40, 0.0, 1.0);
+    float mids = clamp(u_audio_mid * 0.85 + u_bands[5] * 0.32, 0.0, 1.0);
+    float phase = u_motion_time * 1.8;
+
+    // Independent folds along each axis keep the tendrils curling around the core.
+    vec3 bend = vec3(
+        sin(p.y * 2.75 + phase + p.z * 0.85),
+        sin(p.z * 2.35 - phase * 0.76 + p.x * 0.80),
+        cos(p.x * 2.65 + phase * 0.88 - p.y * 0.90)
+    );
+    vec3 q = (p + bend * (0.24 + mids * 0.57)) / (1.0 + bass * vec3(0.22, 0.43, 0.16));
+    float distanceFromOrigin = length(p + vec3(0.0, 0.78, 0.0));
+    float wave = kickWave(distanceFromOrigin, u_kick_waves.xy) + kickWave(distanceFromOrigin, u_kick_waves.zw) * 0.65;
+    float radius = 0.83 + bass * 0.24 + wave * 0.32;
+    float folds = sin(q.x * 2.8 - phase * 0.75) * cos(q.y * 3.0 + phase * 0.45) * sin(q.z * 2.9 + q.x);
+    float ripple = sin(q.y * 10.0 + q.z * 7.0 - phase * 1.25) * (u_audio_high * 0.022 + u_beat_snare * 0.050);
+
+    trap = length(q) + folds * 0.18 + wave * 0.15;
+    return (length(q) - radius + folds * (0.20 + mids * 0.22) + ripple) * 0.60;
 }
 
 // Sacred Sri Yantra Mandala SDF
 // Band 9 (Vocal Low): Middle mandala ring breathing
 // Band 12 (Pres Low): Crystalline surface ridge sharpness
 float mapSriYantra(vec3 p, out float trap) {
-    vec3 pScaled = p * 1.4;
+    vec3 pScaled = rotateZ(u_motion_time * 0.13 + u_bands[7] * 0.28) * (p * 1.4);
     float r = length(pScaled.xy);
     float a = atan(pScaled.y, pScaled.x);
     
     // Band 9: middle mandala ring — vocal low exclusive
-    float ring1 = abs(r - (0.75 + sin(u_audio_time * 0.15 + u_bands[1] * 0.4) * 0.12 + u_bands[2] * 0.15 + u_beat_kick * 0.09)) - 0.035;
+    float ring1 = abs(r - (0.75 + sin(u_motion_time * 0.15 + u_bands[1] * 0.4) * 0.12 + u_bands[2] * 0.15 + u_beat_kick * 0.09)) - 0.035;
     float ring2 = abs(r - (0.50 + u_bands[9] * 0.14)) - 0.025;
     float ring3 = abs(r - (0.28 + u_bands[12] * 0.08)) - 0.015;
     
-    vec3 q = rotateZ(floor(a * 4.5 + u_bands[7] * 1.0) / 4.5) * pScaled;
+    vec3 q = rotateZ(floor(a * 4.5) / 4.5) * pScaled;
     float tri = max(abs(q.x) * 0.866 + q.y * 0.5, -q.y) - (0.40 + u_bands[2] * 0.15 + u_bands[1] * 0.12);
     
     trap = r;
@@ -413,12 +417,8 @@ float mapMetatronCube(vec3 p, out float trap) {
 // Band 5 (Bass Mid): Torus knot braiding radius
 // Band 7 (Mid Warm): Rotational azimuth momentum
 float mapTorusKnot(vec3 p, out float trap) {
-    // Band 7: rotational azimuth momentum with beat-phase 16th-note subdivision stutter
-    // Rotation snaps to π/2 multiples on each subdivision, blended by kick strength
-    float subdivSnap = floor(u_beat_phase * 4.0) * 1.5708; // π/2 snaps per 16th-note
-    float freeRot = u_audio_time * 0.10 + u_bands[7] * 0.9 + u_bands[11] * 0.4;
-    float stutterRot = mix(freeRot, subdivSnap + u_bands[7] * 0.9, u_audio_kick * 0.50);
-    vec3 q = rotateZ(stutterRot) * (p * 1.5);
+    float rotation = u_motion_time * 0.24 + u_audio_mid * 0.58 + u_beat_kick * 0.12;
+    vec3 q = rotateZ(rotation) * (p * 1.5);
     float r = length(q.xy);
     float a = atan(q.y, q.x);
     
@@ -442,8 +442,8 @@ float mapPrismPyramid(vec3 p, out float trap) {
     float pyr = max(abs(q.x) + q.y, max(abs(q.z) + q.y, -q.y - 0.8)) * 0.7071;
     
     // Band 12: crystal size — pres low exclusive
-    vec3 crystalP = q - vec3(0.0, 0.2 + sin(u_audio_time * 0.45 + u_bands[1] * 0.4) * 0.20 + u_bands[2] * 0.20 + u_beat_kick * 0.14, 0.0);
-    crystalP = rotateY(u_audio_time * 0.45 + u_bands[7] * 0.9 + u_bands[9] * 0.5) * crystalP;
+    vec3 crystalP = q - vec3(0.0, 0.2 + sin(u_motion_time * 0.45 + u_bands[1] * 0.4) * 0.20 + u_bands[2] * 0.20 + u_beat_kick * 0.14, 0.0);
+    crystalP = rotateY(u_motion_time * 0.45 + u_bands[7] * 0.9 + u_bands[9] * 0.5) * crystalP;
     float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) * 0.5773 - (0.16 + u_bands[12] * 0.20 + u_bands[16] * 0.12);
     
     trap = length(crystalP);
@@ -457,10 +457,10 @@ float mapCosmicTunnel(vec3 p, out float trap) {
     float r = length(p.xy);
     float historyWave = getTemporalAcousticWave(p, 0.08) * 0.20;
     // Band 8: aperture cavity breath — snare body exclusive
-    float haloRadius = 1.1 + u_bands[8] * 0.28 + u_bands[1] * 0.18 + historyWave;
+    float haloRadius = 1.1 + u_bands[8] * 0.24 + u_audio_sub * 0.32 + historyWave;
     float tunnel = abs(r - haloRadius) - 0.07;
     // Band 8: rib depth — snare body exclusive
-    float rib = abs(sin(p.z * 2.5 + u_audio_time * 1.2 + u_bands[1] * 1.8)) - (0.05 + u_bands[8] * 0.10 + u_bands[12] * 0.06);
+    float rib = abs(sin(p.z * 2.5 + u_motion_time * 1.2 + u_bands[1] * 1.8)) - (0.05 + u_bands[8] * 0.10 + u_bands[12] * 0.06);
     
     trap = r;
     return max(tunnel, rib);
@@ -481,8 +481,8 @@ float mapScene(vec3 p, out float trap) {
 
     // Surface detail optimization: Smoothly blend expensive micro-displacements 
     // to prevent distance-field discontinuities which cause blown-out phantom boundaries
-    float dispBlend = smoothstep(0.15, 0.0, d);
-    if (dispBlend > 0.0) {
+    float dispBlend = 1.0 - smoothstep(0.0, 0.15, abs(d));
+    if (u_geometry_mode != 3 && dispBlend > 0.0) {
         d += getMicroDisplacement(p) * dispBlend;
     }
     return d;
@@ -509,7 +509,7 @@ void main() {
     // Band 0 (Sub 1): Lens shockwave & peripheral warp — exclusive
     float r2 = dot(uv, uv);
     float boundedR2 = min(r2, 0.85);
-    float lensDisplacement = (u_bands[0] * 0.030 + u_beat_kick * 0.035 + u_lens_shock * 0.04) * boundedR2;
+    float lensDisplacement = (u_audio_sub * 0.020 + u_beat_kick * 0.022) * boundedR2;
     uv *= (1.0 + lensDisplacement);
 
     if (u_geometry_mode == 0) {
@@ -520,21 +520,20 @@ void main() {
         return;
     }
     
-    if (u_fx_mode == 2 || u_audio_snare > 0.55 || u_beat_snare > 0.55) {
-        uv.x += sin(uv.y * 22.0 + u_audio_time * 1.5) * 0.003 * (u_audio_snare + u_audio_treb * 0.3 + u_beat_snare * 0.3);
+    if (u_fx_mode == 2) {
+        uv.x += sin(uv.y * 22.0 + u_motion_time * 1.5) * 0.003 * (u_audio_snare + u_audio_treb * 0.3 + u_beat_snare * 0.3);
     }
 
     uv = applyKaleidoscope(uv, u_kaleidoscope_folds);
 
-    // Band 2 (Kick 1): Camera distance Z-recoil thump — exclusive
-    float camDist = 3.6 * u_zoom * (1.0 - u_bands[0] * 0.06 - u_bands[2] * 0.06 - u_beat_kick * 0.04);
-    // Band 7 (Mid Warm): Rotational azimuth momentum in main()
-    float rotY = u_audio_time * 0.45 + u_offset.x * 2.5 + u_bands[7] * 0.28 + u_bands[11] * 0.15;
-    float rotX = u_offset.y * 2.5 + sin(u_audio_time * 0.28) * 0.18 + u_bands[0] * 0.10;
+    float cameraBreath = u_geometry_mode == 3 ? 0.0 : u_audio_sub * 0.035 + u_beat_kick * 0.025;
+    float cameraBase = u_geometry_mode == 3 ? 5.2 : 3.6;
+    float camDist = cameraBase * u_zoom * (1.0 - cameraBreath);
+    float rotY = u_motion_time * 0.45 + u_offset.x * 2.5;
+    float rotX = u_offset.y * 2.5 + sin(u_motion_time * 0.28) * 0.18;
 
     vec3 ro = vec3(0.0, 0.0, -camDist);
-    // Controlled, rhythmic sway centered on screen
-    ro.xy += vec2(sin(u_audio_time * 0.35), cos(u_audio_time * 0.28)) * (0.04 + u_audio_sub * 0.10);
+    ro.xy += vec2(sin(u_motion_time * 0.35), cos(u_motion_time * 0.28)) * 0.045;
 
     mat3 rotM = rotateY(rotY) * rotateX(rotX);
     ro = rotM * ro;
@@ -581,7 +580,7 @@ void main() {
     // Consolidated Volumetric Mist calculation: evaluate expensive palette once after raymarching
     if (accumMist > 0.0) {
         float avgTrap = mistTrapSum / max(1e-4, accumMist);
-        vec3 mistCol = getDynamicPalette(avgTrap + u_audio_time * 0.015, u_color_base.x);
+        vec3 mistCol = getDynamicPalette(avgTrap + u_motion_time * 0.015, u_color_base.x);
         volumetricMist = mistCol * accumMist * (0.03 + u_audio_sub * 0.04 + u_audio_mid * 0.025);
     }
 
@@ -603,8 +602,7 @@ void main() {
         float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), 2.2) * (0.60 + u_bands[14] * 1.4 + u_bands[12] * 0.5);
         
         // Band 10 (Vocal Mid): Dynamic palette color wheel shift — exclusive
-        // Beat-phase hue lock: color resets at each kick and cycles through the beat interval
-        float palettePos = trap * 0.5 + u_audio_time * 0.005 + u_beat_phase * 0.22
+        float palettePos = trap * 0.5 + u_motion_time * 0.015 + u_beat_kick * 0.043
                          + u_bands[10] * 0.35 + u_bands[16] * 0.18 + u_bands[2] * 0.08;
         vec3 baseRGB = getDynamicPalette(palettePos, u_color_base.x);
         
@@ -633,44 +631,45 @@ void main() {
             float tFloor = (floorY - ro.y) / rd.y;
             if (tFloor > 0.0 && (!hit || tFloor < t)) {
                 vec3 pFloor = ro + rd * tFloor;
-                vec2 grid = abs(fract(pFloor.xz * 1.2 - vec2(0.0, u_audio_time * 0.45 + u_audio_sub * 1.0)) - 0.5);
+                vec2 grid = abs(fract(pFloor.xz * 1.2 - vec2(0.0, u_motion_time * 0.45)) - 0.5);
                 float line = min(grid.x, grid.y);
-                float gridGlow = smoothstep(0.05, 0.0, line) * exp(-tFloor * 0.20);
-                vec3 gridCol = getDynamicPalette(u_audio_time * 0.008 + 0.3 + u_audio_kick * 0.1, u_color_base.x);
+                float gridGlow = (1.0 - smoothstep(0.0, 0.05, line)) * exp(-tFloor * 0.20);
+                vec3 gridCol = getDynamicPalette(u_motion_time * 0.008 + 0.3 + u_audio_kick * 0.1, u_color_base.x);
                 finalColor += gridCol * gridGlow * 0.35 * (1.0 + u_audio_kick * 0.5 + u_audio_sub * 0.4);
             }
         }
         // Also overlay a screen-space grid in empty areas
-        vec2 sgrid = abs(fract(uv * (5.0 + u_audio_kick * 3.0) - vec2(0.0, u_audio_time * 0.15)) - 0.5);
+        vec2 sgrid = abs(fract(uv * 5.5 - vec2(0.0, u_motion_time * 0.15)) - 0.5);
         float sline = min(sgrid.x, sgrid.y);
-        float sgridGlow = smoothstep(0.06, 0.0, sline) * (hit ? 0.0 : 1.0);
-        vec3 sgridCol = getDynamicPalette(u_audio_time * 0.006 + 0.4, u_color_base.x);
+        float sgridGlow = (1.0 - smoothstep(0.0, 0.06, sline)) * (hit ? 0.0 : 1.0);
+        vec3 sgridCol = getDynamicPalette(u_motion_time * 0.006 + 0.4, u_color_base.x);
         finalColor += sgridCol * sgridGlow * 0.20 * (1.0 + u_audio_sub * 0.5);
     }
 
     // Band 11 (Snare Snap): Chromatic glitch flare — ONLY fires when FX mode 2 is selected
     if (u_fx_mode == 2) {
-        float chromaticSpread = clamp(u_bands[11] * 0.40 + u_beat_snare * 0.25 + u_energy_flux * 0.15 + u_lens_shock * 0.15, 0.0, 1.0);
+        float chromaticSpread = clamp(u_bands[11] * 0.40 + u_beat_snare * 0.25 + u_energy_flux * 0.15 + u_beat_kick * 0.08, 0.0, 1.0);
         finalColor = mix(finalColor, vec3(finalColor.g, finalColor.b, finalColor.r), chromaticSpread);
     }
 
     // Band 16 (Air Low): Cosmic particle dust / starlight scatter — hash-based procedural stars
     if (u_fx_mode == 3) {
-        float cellSize = 0.035 + u_spectral_flatness * 0.015;
-        vec2 cellId = floor(uv / cellSize);
-        vec2 cellUV = fract(uv / cellSize);
+        float cellSize = 0.045;
+        vec2 dustUV = uv + u_motion_time * vec2(0.012, -0.018);
+        vec2 cellId = floor(dustUV / cellSize);
+        vec2 cellUV = fract(dustUV / cellSize);
         vec2 hashIn = cellId + vec2(127.1, 311.7);
         float h1 = fract(sin(dot(hashIn, vec2(127.1, 311.7))) * 43758.5453);
         float h2 = fract(sin(dot(hashIn + 1.0, vec2(269.5, 183.3))) * 43758.5453);
         float h3 = fract(sin(dot(hashIn + 2.0, vec2(419.2, 371.9))) * 43758.5453);
-        vec2 starPos = vec2(h1, h2);
+        vec2 starPos = mix(vec2(0.23), vec2(0.77), vec2(h1, h2));
         float dist = length(cellUV - starPos);
-        float twinkle = 0.55 + 0.45 * sin(u_audio_time * (2.0 + h3 * 6.0) + h1 * 6.2831);
+        float twinkle = 0.66 + (0.22 + u_spectral_flatness * 0.10) * sin(u_motion_time * (2.0 + h3 * 6.0) + h1 * 6.2831);
         float starRadius = (0.08 + h3 * 0.10) * twinkle * (1.0 + u_bands[16] * 1.2 + u_bands[17] * 0.8);
-        float star = smoothstep(starRadius, 0.0, dist);
+        float star = (1.0 - smoothstep(0.0, starRadius, dist));
         float brightness = (0.5 + h2 * 0.5) * (1.0 + u_bands[16] * 1.5 + u_audio_air * 1.0 + u_beat_snare * 0.6);
         if (star > 0.0) {
-            vec3 starCol = getDynamicPalette(h1 + h3 * 0.5 + u_audio_time * 0.012 + u_beat_phase * 0.12, u_color_base.x);
+            vec3 starCol = getDynamicPalette(h1 + h3 * 0.5 + u_motion_time * 0.012 + u_beat_kick * 0.035, u_color_base.x);
             finalColor += starCol * star * brightness;
         }
     }

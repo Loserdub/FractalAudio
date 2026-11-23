@@ -1,5 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { vertexShaderSource, fragmentShaderSource } from '../shaders/fractal';
+import { AudioMotion } from '../utils/AudioMotion';
+import { Dampener } from '../utils/Dampener';
 
 export interface AudioMetrics {
   sub: number;
@@ -20,28 +22,6 @@ export interface AudioMetrics {
   energyFlux: number;
 }
 
-// 18 ISO/Mel-Spaced Frequency Bands with Custom Ballistics & Acoustic Weights
-const BAND_DEFINITIONS = [
-  { name: 'Sub 1', start: 1, end: 2, attack: 6.0, decay: 3.0, weight: 1.4 },      // 20-45 Hz
-  { name: 'Sub 2', start: 3, end: 4, attack: 6.0, decay: 3.0, weight: 1.3 },      // 45-85 Hz
-  { name: 'Kick 1', start: 5, end: 6, attack: 6.0, decay: 3.0, weight: 1.25 },    // 85-130 Hz
-  { name: 'Kick 2', start: 7, end: 9, attack: 6.0, decay: 3.0, weight: 1.2 },     // 130-195 Hz
-  { name: 'Bass Low', start: 10, end: 13, attack: 6.0, decay: 3.0, weight: 1.15 }, // 195-280 Hz
-  { name: 'Bass Mid', start: 14, end: 19, attack: 6.0, decay: 3.0, weight: 1.1 },  // 280-410 Hz
-  { name: 'Mid Low', start: 20, end: 27, attack: 6.0, decay: 3.0, weight: 1.1 },   // 410-580 Hz
-  { name: 'Mid Warmth', start: 28, end: 38, attack: 6.0, decay: 3.0, weight: 1.15 },// 580-820 Hz
-  { name: 'Snare Body', start: 39, end: 54, attack: 6.0, decay: 3.0, weight: 1.2 }, // 820-1.16 kHz
-  { name: 'Vocal Low', start: 55, end: 77, attack: 6.0, decay: 3.0, weight: 1.25 },// 1.16-1.65 kHz
-  { name: 'Vocal Mid', start: 78, end: 110, attack: 6.0, decay: 3.0, weight: 1.35 },// 1.65-2.37 kHz
-  { name: 'Snare Snap', start: 111, end: 155, attack: 6.0, decay: 3.0, weight: 1.45 },// 2.37-3.34 kHz
-  { name: 'Pres Low', start: 156, end: 220, attack: 6.0, decay: 3.0, weight: 1.55 }, // 3.34-4.74 kHz
-  { name: 'Pres High', start: 221, end: 310, attack: 6.0, decay: 3.0, weight: 1.7 }, // 4.74-6.68 kHz
-  { name: 'Treb Low', start: 311, end: 440, attack: 6.0, decay: 3.0, weight: 1.85 }, // 6.68-9.47 kHz
-  { name: 'Treb High', start: 441, end: 620, attack: 6.0, decay: 3.0, weight: 2.05 }, // 9.47-13.35 kHz
-  { name: 'Air Low', start: 621, end: 775, attack: 6.0, decay: 3.0, weight: 2.3 },   // 13.35-16.7 kHz
-  { name: 'Air High', start: 776, end: 930, attack: 6.0, decay: 3.0, weight: 2.6 }   // 16.7-20.0 kHz
-];
-
 // Lightweight listener subscription system to avoid root React state re-rendering
 type AudioMetricsCallback = (metrics: AudioMetrics) => void;
 const audioMetricsListeners = new Set<AudioMetricsCallback>();
@@ -60,6 +40,7 @@ export const emitAudioMetrics = (metrics: AudioMetrics) => {
 interface VisualizerProps {
   canvasRef?: React.RefObject<HTMLCanvasElement | null>;
   analyser: AnalyserNode | null;
+  analysisRevision: number;
   zoom: number;
   offsetX: number;
   offsetY: number;
@@ -81,7 +62,6 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
   const canvasRef = props.canvasRef || internalCanvasRef;
 
   const requestRef = useRef<number>(0);
-  const startTimeRef = useRef<number>(Date.now());
   
   const propsRef = useRef(props);
   useEffect(() => {
@@ -150,8 +130,7 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
 
     locationsRef.current = {
       u_resolution: gl.getUniformLocation(program, 'u_resolution'),
-      u_time: gl.getUniformLocation(program, 'u_time'),
-      u_audio_time: gl.getUniformLocation(program, 'u_audio_time'),
+      u_motion_time: gl.getUniformLocation(program, 'u_motion_time'),
       u_zoom: gl.getUniformLocation(program, 'u_zoom'),
       u_offset: gl.getUniformLocation(program, 'u_offset'),
       u_c: gl.getUniformLocation(program, 'u_c'),
@@ -175,19 +154,20 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_geometry_mode: gl.getUniformLocation(program, 'u_geometry_mode'),
       u_fx_mode: gl.getUniformLocation(program, 'u_fx_mode'),
       u_kaleidoscope_folds: gl.getUniformLocation(program, 'u_kaleidoscope_folds'),
-      u_rot_speed: gl.getUniformLocation(program, 'u_rot_speed'),
       u_glow_intensity: gl.getUniformLocation(program, 'u_glow_intensity'),
-      u_lens_shock: gl.getUniformLocation(program, 'u_lens_shock'),
       u_audio_history: gl.getUniformLocation(program, 'u_audio_history'),
       u_history_offset: gl.getUniformLocation(program, 'u_history_offset'),
-      u_beat_phase: gl.getUniformLocation(program, 'u_beat_phase'),
+      u_kick_waves: gl.getUniformLocation(program, 'u_kick_waves'),
     };
 
     // 256x64 8-Bit Luminance Audio History Circular Ring Buffer Texture (Power-of-Two WebGL 1.0)
     const historyWidth = 256;
     const historyHeight = 64;
-    const singleRowBuffer = new Uint8Array(historyWidth);
+    const audio = new AudioMotion(historyWidth);
     let historyHead = 0;
+    let lastHistoryTime = 0;
+    const clearHistory = new Uint8Array(historyWidth * historyHeight);
+    const previousHistoryRow = new Uint8Array(historyWidth);
 
     const audioTexture = gl.createTexture();
     gl.activeTexture(gl.TEXTURE0);
@@ -198,10 +178,15 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
     gl.texImage2D(
       gl.TEXTURE_2D, 0, gl.LUMINANCE, historyWidth, historyHeight, 0,
-      gl.LUMINANCE, gl.UNSIGNED_BYTE, new Uint8Array(historyWidth * historyHeight)
+      gl.LUMINANCE, gl.UNSIGNED_BYTE, clearHistory
     );
 
-    // DPR Clamping and Max Dimension Capping to prevent GPU fill-rate exhaustion on 1440p / 4K / Retina screens
+    // Keep frame delivery steady when a scene or recording pushes the GPU.
+    let quality = 1;
+    let budgetStart = performance.now();
+    let budgetFrames = 0;
+    let recoveryWindows = 0;
+
     const handleResize = () => {
       if (canvas && gl) {
         // Limit DPR to 1.0 (no retina rendering) to save fill-rate
@@ -211,51 +196,27 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         
         // Cap max rendering dimensions to 720p equivalent
         const maxDim = 1280;
-        const scale = Math.min(1.0, maxDim / Math.max(rawW, rawH));
+        const scale = Math.min(1, maxDim / Math.max(rawW, rawH)) * quality;
         
-        canvas.width = Math.max(320, Math.floor(rawW * scale));
-        canvas.height = Math.max(240, Math.floor(rawH * scale));
-        gl.viewport(0, 0, canvas.width, canvas.height);
+        const width = Math.max(320, Math.floor(rawW * scale));
+        const height = Math.max(240, Math.floor(rawH * scale));
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+          gl.viewport(0, 0, width, height);
+        }
       }
     };
     
     window.addEventListener('resize', handleResize);
     handleResize();
 
-    let dataArray: Uint8Array | null = null;
-    let prevDataArray: Uint8Array | null = null;
-    
-    // 18-Band Envelope Followers & Feature Trackers
-    const smoothedBands = new Float32Array(18);
-    let smoothedCentroid = 0.3;
-    let smoothedFlatness = 0.2;
-    let smoothedFlux = 0.0;
-    
-    let kickTrigger = 0;
-    let snareTrigger = 0;
-    let kickFluxMean = 0.05;
-    let snareFluxMean = 0.05;
-
-    // AGC (Automatic Gain Control) Dynamic Floor/Peak Normalizer
-    let agcPeak = 0.40;
-    let agcFloor = 0.01;
-
-    // Viscoelastic Damped Spring-Mass Simulation Variables
-    let camVelocity = 0.0;
-    let camSpring = 0.0; // Rest position = 0
-    const stiffness = 130.0; // Spring elasticity
-    const damping = 15.0;    // Viscous drag
-    let lensShock = 0.0;
-
-    let lastKickTime = 0;
-    let lastSnareTime = 0;
-    let beatIntervalMs = 500;  // Rolling estimated kick-to-kick interval (default ~120 BPM)
-    let beatPhase = 0.0;       // 0.0 → 1.0 normalized phase within the current beat cycle
+    const motionSpeed = new Dampener(propsRef.current.rotSpeed, 5);
     let lastFrameTime = performance.now();
     let lastMetricsEmitTime = 0;
-    let audioTime = 0;
+    let motionTime = 0;
 
-    const render = () => {
+    const render = (nowMs: number) => {
       const gl = glRef.current;
       const program = programRef.current;
       const locs = locationsRef.current;
@@ -266,198 +227,70 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         return;
       }
 
-      const nowMs = performance.now();
-      const dt = Math.min(0.1, Math.max(0.001, (nowMs - lastFrameTime) * 0.001));
+      const frameMs = nowMs - lastFrameTime;
+      const dt = Math.min(0.067, Math.max(0, frameMs * 0.001));
       lastFrameTime = nowMs;
 
-      const time = (Date.now() - startTimeRef.current) * 0.001;
-      
+      if (!document.hidden && frameMs < 200) budgetFrames++;
+      if (nowMs - budgetStart >= 1000) {
+        const frameMsAverage = (nowMs - budgetStart) / budgetFrames;
+        recoveryWindows = frameMsAverage < 18 ? recoveryWindows + 1 : 0;
+        const previousQuality = quality;
+        if (!document.hidden && budgetFrames >= 8) {
+          if (frameMsAverage > 22) quality = Math.max(0.62, quality * 0.85);
+          if (recoveryWindows >= 3) {
+            quality = Math.min(1, quality + 0.07);
+            recoveryWindows = 0;
+          }
+        }
+        if (quality !== previousQuality) handleResize();
+        budgetStart = nowMs;
+        budgetFrames = 0;
+      }
+
+      motionTime += motionSpeed.update(currentProps.rotSpeed, dt) * dt * 0.7;
+
       if (canvasRef.current) {
         gl.uniform2f(locs.u_resolution, canvasRef.current.width, canvasRef.current.height);
       }
 
-      let isKickBeat = false, isSnareBeat = false;
-      const rawBands = new Float32Array(18);
+      const historySteps = audio.update(currentProps.analyser, currentProps.analysisRevision, nowMs, dt, currentProps.sensitivity);
+      const bands = audio.bands;
+      const smoothedSub = (bands[0] + bands[1]) * 0.5;
+      const smoothedKick = (bands[2] + bands[3]) * 0.5;
+      const smoothedMid = (bands[6] + bands[7] + bands[8]) / 3;
+      const smoothedSnare = (bands[9] + bands[10] + bands[11]) / 3;
+      const smoothedPres = (bands[12] + bands[13]) * 0.5;
+      const smoothedTreb = (bands[14] + bands[15]) * 0.5;
+      const smoothedAir = (bands[16] + bands[17]) * 0.5;
+      const smoothedLow = (smoothedSub + smoothedKick) * 0.5;
+      const smoothedHigh = smoothedPres * 0.3 + smoothedTreb * 0.4 + smoothedAir * 0.3;
 
-      if (currentProps.analyser) {
-        if (!dataArray || dataArray.length !== currentProps.analyser.frequencyBinCount) {
-          dataArray = new Uint8Array(currentProps.analyser.frequencyBinCount);
-          prevDataArray = new Uint8Array(currentProps.analyser.frequencyBinCount);
-        }
-        currentProps.analyser.getByteFrequencyData(dataArray);
-
-        const inv255 = 1.0 / 255.0;
-        let weightedFreqSum = 0;
-        let totalEnergySum = 0;
-        let logEnergySum = 0;
-        let totalSpectralFlux = 0;
-        let activeBinCount = 0;
-
-        let kickFlux = 0;
-        let snareFlux = 0;
-
-        // 1. Calculate 18-Band Mel Energies & Spectral Descriptors
-        for (let b = 0; b < 18; b++) {
-          const def = BAND_DEFINITIONS[b];
-          let bandEnergy = 0;
-          const count = (def.end - def.start + 1);
-
-          for (let i = def.start; i <= def.end; i++) {
-            const rawVal = dataArray[i] * inv255;
-            const val = rawVal * (0.85 + 0.15 * rawVal);
-            bandEnergy += val;
-
-            const prevRaw = prevDataArray ? prevDataArray[i] * inv255 : 0;
-            const binFlux = Math.max(0, rawVal - prevRaw);
-            totalSpectralFlux += binFlux;
-
-            // Kick flux in Bands 1..3
-            if (b >= 1 && b <= 3) {
-              kickFlux += binFlux * 1.4;
-            }
-            // Snare flux in Bands 8..11
-            if (b >= 8 && b <= 11) {
-              snareFlux += binFlux * 1.3;
-            }
-
-            // Spectral Centroid & Flatness accumulators
-            weightedFreqSum += i * rawVal;
-            totalEnergySum += rawVal;
-            logEnergySum += Math.log(Math.max(1e-5, rawVal));
-            activeBinCount++;
+      if (historySteps > 0) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, audioTexture);
+        if (historySteps >= historyHeight) {
+          gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, historyWidth, historyHeight,
+            gl.LUMINANCE, gl.UNSIGNED_BYTE, clearHistory);
+          historyHead = (historyHead + historySteps) % historyHeight;
+        } else {
+          // Hold the last sample in slots skipped by a slow frame.
+          for (let i = 1; i < historySteps; i++) {
+            historyHead = (historyHead + 1) % historyHeight;
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, historyHead, historyWidth, 1,
+              gl.LUMINANCE, gl.UNSIGNED_BYTE, previousHistoryRow);
           }
-
-          rawBands[b] = (bandEnergy / count) * def.weight;
+          historyHead = (historyHead + 1) % historyHeight;
         }
-
-        if (prevDataArray && dataArray) {
-          prevDataArray.set(dataArray);
-        }
-
-        // 2. Dynamic Auto-Gain Control (AGC) with smooth rolling window
-        const frameRms = totalEnergySum / Math.max(1, activeBinCount);
-        agcPeak = Math.max(0.12, Math.max(agcPeak * 0.9988, frameRms));
-        agcFloor = Math.min(agcFloor * 1.0015, frameRms * 0.4);
-        const dynamicSpread = Math.max(0.06, agcPeak - agcFloor);
-        const agcMultiplier = Math.min(3.8, 0.40 / dynamicSpread) * (currentProps.sensitivity * 0.5);
-
-        // Apply AGC to 18 bands
-        for (let b = 0; b < 18; b++) {
-          rawBands[b] = Math.min(1.4, rawBands[b] * agcMultiplier);
-        }
-
-        // 3. Timbral Feature Extraction
-        // Spectral Centroid (Normalized 0..1 mass balance)
-        const targetCentroid = totalEnergySum > 0.01 
-          ? Math.min(1.0, (weightedFreqSum / totalEnergySum) / 280.0) 
-          : 0.25;
-        smoothedCentroid += (targetCentroid - smoothedCentroid) * (1.0 - Math.exp(-12.0 * dt));
-
-        // Spectral Flatness (Wiener entropy: tonality vs noise)
-        const geomMean = Math.exp(logEnergySum / Math.max(1, activeBinCount));
-        const arithMean = totalEnergySum / Math.max(1, activeBinCount);
-        const targetFlatness = arithMean > 0.005 ? Math.min(1.0, geomMean / arithMean) : 0.15;
-        smoothedFlatness += (targetFlatness - smoothedFlatness) * (1.0 - Math.exp(-14.0 * dt));
-
-        // Spectral Flux transient energy
-        smoothedFlux += (totalSpectralFlux * 0.08 - smoothedFlux) * (1.0 - Math.exp(-24.0 * dt));
-
-        // 4. Adaptive Transient Beat Triggers
-        kickFluxMean = kickFluxMean * 0.88 + kickFlux * 0.12;
-        snareFluxMean = snareFluxMean * 0.88 + snareFlux * 0.12;
-
-        const kickMinThreshold = Math.max(0.12, (kickFluxMean * 1.4) / Math.max(0.25, currentProps.sensitivity));
-        const snareMinThreshold = Math.max(0.09, (snareFluxMean * 1.4) / Math.max(0.25, currentProps.sensitivity));
-
-        if (kickFlux > kickMinThreshold && (nowMs - lastKickTime > 110)) {
-          isKickBeat = true;
-          kickTrigger = 1.0;
-          // EMA tempo estimator: update rolling beat interval from kick-to-kick timing
-          const newInterval = nowMs - lastKickTime;
-          if (newInterval > 200 && newInterval < 2000) {
-            beatIntervalMs = beatIntervalMs * 0.85 + newInterval * 0.15;
-          }
-          lastKickTime = nowMs;
-        }
-
-        if (snareFlux > snareMinThreshold && (nowMs - lastSnareTime > 90)) {
-          isSnareBeat = true;
-          snareTrigger = 1.0;
-          lastSnareTime = nowMs;
-        }
+        lastHistoryTime = nowMs;
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, historyHead, historyWidth, 1,
+          gl.LUMINANCE, gl.UNSIGNED_BYTE, audio.historyRow);
+        previousHistoryRow.set(audio.historyRow);
       }
-
-      // Delta-time independent exponential decay on transient beat triggers
-      kickTrigger *= Math.exp(-9.5 * dt);
-      snareTrigger *= Math.exp(-9.5 * dt);
-
-      // Beat phase: 0.0 → 1.0 normalized position within the current beat cycle
-      beatPhase = Math.min(1.0, (nowMs - lastKickTime) / Math.max(1, beatIntervalMs));
-
-      // 5. Multi-Rate Exponential Envelope Followers per Band
-      for (let b = 0; b < 18; b++) {
-        const def = BAND_DEFINITIONS[b];
-        const target = rawBands[b];
-        const cur = smoothedBands[b];
-        const rate = target > cur ? def.attack : def.decay;
-        smoothedBands[b] = cur + (target - cur) * (1.0 - Math.exp(-rate * dt));
-      }
-
-      // Composite backwards-compatible legacy bands
-      const smoothedSub = (smoothedBands[0] + smoothedBands[1]) * 0.5;
-      const smoothedKick = (smoothedBands[2] + smoothedBands[3]) * 0.5;
-      const smoothedMid = (smoothedBands[6] + smoothedBands[7] + smoothedBands[8]) / 3.0;
-      const smoothedSnare = (smoothedBands[9] + smoothedBands[10] + smoothedBands[11]) / 3.0;
-      const smoothedPres = (smoothedBands[12] + smoothedBands[13]) * 0.5;
-      const smoothedTreb = (smoothedBands[14] + smoothedBands[15]) * 0.5;
-      const smoothedAir = (smoothedBands[16] + smoothedBands[17]) * 0.5;
-
-      const smoothedLow = (smoothedSub * 0.5 + smoothedKick * 0.5);
-      const smoothedHigh = (smoothedPres * 0.3 + smoothedTreb * 0.4 + smoothedAir * 0.3);
-
-      // Kinetic Audio Momentum / Phase Velocity Accumulator (Confident, Responsive Club Flow)
-      const kineticVelocity = 0.50 + smoothedKick * 0.70 + smoothedSub * 0.50 + kickTrigger * 0.35;
-      audioTime += kineticVelocity * dt * currentProps.rotSpeed;
-
-      // 6. Update 2D FFT History Ring Buffer Texture via texSubImage2D (64x bandwidth reduction)
-      historyHead = (historyHead + 1) % historyHeight;
-      if (dataArray && dataArray.length > 0) {
-        const binStep = dataArray.length / historyWidth;
-        for (let i = 0; i < historyWidth; i++) {
-          const binIdx = Math.min(dataArray.length - 1, Math.floor(i * binStep));
-          singleRowBuffer[i] = dataArray[binIdx];
-        }
-      } else {
-        singleRowBuffer.fill(0);
-      }
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, audioTexture);
-      gl.texSubImage2D(
-        gl.TEXTURE_2D, 0, 0, historyHead, historyWidth, 1,
-        gl.LUMINANCE, gl.UNSIGNED_BYTE, singleRowBuffer
-      );
-      if (locs.u_audio_history) {
-        gl.uniform1i(locs.u_audio_history, 0);
-      }
-      if (locs.u_history_offset) {
-        gl.uniform1f(locs.u_history_offset, historyHead / historyHeight);
-      }
-
-      // 7. Viscoelastic Camera Dynamics & Subwoofer Lens Shock Physics (Punchy, Bounded Breathing)
-      if (isKickBeat) {
-        camVelocity -= (0.26 + kickTrigger * 0.30) * Math.max(0.35, currentProps.sensitivity * 0.40);
-        lensShock = Math.min(0.70, lensShock + 0.35);
-      }
-      lensShock *= Math.exp(-8.5 * dt);
-
-      // 2nd-order damped harmonic oscillator: F = -k*x - c*v
-      const springForce = -stiffness * camSpring - damping * camVelocity;
-      camVelocity += springForce * dt;
-      camSpring += camVelocity * dt;
-      // Controlled camera excursion preventing geometry from blowing out of bounds
-      camSpring = Math.max(-0.40, Math.min(0.45, camSpring));
-
-      const effectiveZoom = currentProps.zoom * (1.0 + camSpring * 0.12);
+      // Interpolate older samples as they travel across the surface between texture uploads.
+      const historyFraction = Math.min(1, (nowMs - lastHistoryTime) * 0.03);
+      gl.uniform1i(locs.u_audio_history, 0);
+      gl.uniform1f(locs.u_history_offset, (historyHead + 0.5 + historyFraction) / historyHeight);
 
       // Broadcast real-time 18-band metrics to isolated subscriber HUDs (~30 FPS)
       if (nowMs - lastMetricsEmitTime >= 33) {
@@ -470,24 +303,25 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
           presence: smoothedPres,
           treble: smoothedTreb,
           air: smoothedAir,
-          isKickBeat,
-          isSnareBeat,
-          kickIntensity: kickTrigger,
-          snareIntensity: snareTrigger,
-          bands: Array.from(smoothedBands),
-          spectralCentroid: smoothedCentroid,
-          spectralFlatness: smoothedFlatness,
-          energyFlux: smoothedFlux
+          isKickBeat: audio.kickDetected,
+          isSnareBeat: audio.snareDetected,
+          kickIntensity: audio.kick,
+          snareIntensity: audio.snare,
+          bands: Array.from(bands),
+          spectralCentroid: audio.centroid,
+          spectralFlatness: audio.flatness,
+          energyFlux: audio.flux
         };
+        audio.kickDetected = false;
+        audio.snareDetected = false;
         emitAudioMetrics(metrics);
         if (currentProps.onAudioMetricsUpdate) {
           currentProps.onAudioMetricsUpdate(metrics);
         }
       }
 
-      gl.uniform1f(locs.u_time, time);
-      gl.uniform1f(locs.u_audio_time, audioTime);
-      gl.uniform1f(locs.u_zoom, Math.max(0.08, effectiveZoom));
+      gl.uniform1f(locs.u_motion_time, motionTime);
+      gl.uniform1f(locs.u_zoom, Math.max(0.08, currentProps.zoom));
       gl.uniform2f(locs.u_offset, currentProps.offsetX, currentProps.offsetY);
       gl.uniform2f(locs.u_c, currentProps.juliaC.x, currentProps.juliaC.y);
       gl.uniform1i(locs.u_iterations, currentProps.iterations);
@@ -507,31 +341,25 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
 
       // Pass 18-band Mel spectrum & high-level acoustic descriptors
       if (locs.u_bands) {
-        gl.uniform1fv(locs.u_bands, smoothedBands);
+        gl.uniform1fv(locs.u_bands, bands);
       }
       if (locs.u_spectral_centroid) {
-        gl.uniform1f(locs.u_spectral_centroid, smoothedCentroid);
+        gl.uniform1f(locs.u_spectral_centroid, audio.centroid);
       }
       if (locs.u_spectral_flatness) {
-        gl.uniform1f(locs.u_spectral_flatness, smoothedFlatness);
+        gl.uniform1f(locs.u_spectral_flatness, audio.flatness);
       }
       if (locs.u_energy_flux) {
-        gl.uniform1f(locs.u_energy_flux, smoothedFlux);
+        gl.uniform1f(locs.u_energy_flux, audio.flux);
       }
 
-      gl.uniform1f(locs.u_beat_kick, kickTrigger);
-      gl.uniform1f(locs.u_beat_snare, snareTrigger);
-      if (locs.u_beat_phase) {
-        gl.uniform1f(locs.u_beat_phase, beatPhase);
-      }
-      if (locs.u_lens_shock) {
-        gl.uniform1f(locs.u_lens_shock, lensShock);
-      }
+      gl.uniform1f(locs.u_beat_kick, audio.kick);
+      gl.uniform1f(locs.u_beat_snare, audio.snare);
+      gl.uniform4fv(locs.u_kick_waves, audio.kickWaves);
 
       gl.uniform1i(locs.u_geometry_mode, currentProps.geometryMode);
       gl.uniform1i(locs.u_fx_mode, currentProps.fxMode);
       gl.uniform1f(locs.u_kaleidoscope_folds, currentProps.kaleidoscopeFolds);
-      gl.uniform1f(locs.u_rot_speed, currentProps.rotSpeed);
       gl.uniform1f(locs.u_glow_intensity, currentProps.glowIntensity);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
