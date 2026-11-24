@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
+import { attachTransientDetector } from '../utils/transients';
+
 export type AudioMode = 'mic' | 'file' | 'demo' | 'none';
 
 export const useAudioAnalyzer = () => {
@@ -45,6 +47,7 @@ export const useAudioAnalyzer = () => {
 
       const dest = ctx.createMediaStreamDestination();
       analyser.connect(dest);
+      void attachTransientDetector(ctx, analyser);
       audioDestinationRef.current = dest;
       
       audioContextRef.current = ctx;
@@ -301,6 +304,8 @@ export const useAudioAnalyzer = () => {
     // Initialized without auto-playing demo track
     return () => {
       stopAllSources();
+      void audioContextRef.current?.close();
+      audioContextRef.current = null;
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
       }

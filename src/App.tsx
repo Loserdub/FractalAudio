@@ -60,7 +60,7 @@ export default function App() {
   const [bannerConfig, setBannerConfig] = useState<BannerConfig>({
     enabled: false,
     artistName: 'JUSTIN RAY',
-    subtitle: 'HYBRID PRODUCTION · 3D INK ENGINE',
+    subtitle: 'HYBRID PRODUCTION Â· 3D INK ENGINE',
     font: 'font-notable',
     position: 'bottom-left',
     style: 'difference',
@@ -104,11 +104,13 @@ export default function App() {
   const [iterations, setIterationsState] = useState(64);
   const [colorBase, setColorBaseState] = useState({ h: 0.00, s: 0.90, l: 0.35 }); // Blood Crimson & Obsidian Noir
   const [juliaC, setJuliaCState] = useState({ x: -0.8, y: 0.156 });
+  const [response, setResponse] = useState(0.4);
   const [sensitivity, setSensitivityState] = useState(1.4); // Balanced, calm reactivity
 
   // 3D Raymarching & Geometry States
   const [geometryMode, setGeometryModeState] = useState(3); // Default: 3D Ink Flow
-  const [fxMode, setFxModeState] = useState(1); // Default: Cyber Laser Grid
+  const [fxMix, setFxMix] = useState(0.7);
+  const [fxMode, setFxModeState] = useState(1); // Default: Pulse Grid
   const [kaleidoscopeFolds, setKaleidoscopeFoldsState] = useState(0);
   const [rotSpeed, setRotSpeedState] = useState(0.4);
   const [glowIntensity, setGlowIntensityState] = useState(1.2);
@@ -168,6 +170,8 @@ export default function App() {
     startMediaRecording({
       geometryMode,
       fxMode,
+      fxMix,
+      response,
       kaleidoscopeFolds,
       zoom,
       rotSpeed,
@@ -175,7 +179,7 @@ export default function App() {
       colorBase,
       juliaC
     });
-  }, [startMediaRecording, geometryMode, fxMode, kaleidoscopeFolds, zoom, rotSpeed, glowIntensity, colorBase, juliaC]);
+  }, [startMediaRecording, geometryMode, fxMode, fxMix, response, kaleidoscopeFolds, zoom, rotSpeed, glowIntensity, colorBase, juliaC]);
 
   const randomize = useCallback(() => {
     const newJulia = { x: (Math.random() * 3.2 - 1.6), y: (Math.random() * 3.2 - 1.6) };
@@ -221,9 +225,11 @@ export default function App() {
         iterations={iterations}
         colorBase={colorBase}
         juliaC={juliaC}
-        sensitivity={sensitivity}
+        response={response}
+          sensitivity={sensitivity}
         geometryMode={geometryMode}
         fxMode={fxMode}
+        fxMix={fxMix}
         kaleidoscopeFolds={kaleidoscopeFolds}
         rotSpeed={rotSpeed}
         glowIntensity={glowIntensity}
@@ -236,19 +242,19 @@ export default function App() {
           href="https://trustnodelogic.com" 
           target="_blank" 
           rel="noopener noreferrer"
-          title="Trust Node Logic — https://trustnodelogic.com"
+          title="Trust Node Logic â€” https://trustnodelogic.com"
           className="group flex items-center gap-3 opacity-80 hover:opacity-100 transition-opacity cursor-pointer text-white"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-disc animate-spin-slow opacity-85 group-hover:opacity-100 transition-opacity flex-shrink-0 text-white"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-disc opacity-85 group-hover:opacity-100 transition-opacity flex-shrink-0 text-white"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="2"></circle></svg>
           <div>
             <h1 className="text-3xl font-light tracking-tighter opacity-90 group-hover:opacity-100 transition-opacity flex items-center gap-2.5 text-white">
               <span>Fractal<span className="font-bold">Audio</span></span>
               {isRecording && (
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping inline-block" />
+                <span className="w-2.5 h-2.5 rounded-full bg-neutral-300 inline-block" />
               )}
             </h1>
-            <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-white/60 group-hover:text-white/90 transition-colors pointer-events-none mt-0.5">
-              TRUSTNODELOGIC · 3D INK ENGINE
+            <p className="text-xs font-medium text-white/60 group-hover:text-white/90 transition-colors pointer-events-none mt-0.5">
+              TRUSTNODELOGIC Â· 3D INK ENGINE
             </p>
           </div>
         </a>
@@ -279,12 +285,16 @@ export default function App() {
           setColorBase={setColorBase}
           juliaC={juliaC}
           setJuliaC={setJuliaC}
+          response={response}
           sensitivity={sensitivity}
           setSensitivity={setSensitivity}
+          setResponse={value => { setResponse(value); recordKeyframe({ response: value }); }}
           geometryMode={geometryMode}
           setGeometryMode={setGeometryMode}
           fxMode={fxMode}
+        fxMix={fxMix}
           setFxMode={setFxMode}
+          setFxMix={value => { setFxMix(value); recordKeyframe({ fxMix: value }); }}
           kaleidoscopeFolds={kaleidoscopeFolds}
           setKaleidoscopeFolds={setKaleidoscopeFolds}
           rotSpeed={rotSpeed}

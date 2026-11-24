@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Mic, Upload, Music, Sparkles } from 'lucide-react';
+import { Mic, Upload, Music } from 'lucide-react';
 import { AudioMode } from '../hooks/useAudioAnalyzer';
 
 interface OnboardingModalProps {
@@ -32,28 +32,18 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         className="hidden"
       />
 
-      <div className="bg-zinc-950/90 border border-white/20 p-8 rounded-3xl max-w-md w-full shadow-2xl space-y-6 text-center text-white relative overflow-hidden">
+      <div className="studio-surface studio-welcome p-7 sm:p-8 max-w-md w-full space-y-6 text-left text-white relative overflow-hidden">
         
-        {/* Glow Accent Backdrop */}
-        <div className="absolute -top-24 -left-24 w-48 h-48 bg-lime-400/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-sky-400/20 rounded-full blur-3xl pointer-events-none" />
-
         {/* Icon & Title */}
         <div className="space-y-3 relative z-10">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-lime-400/20 to-sky-400/20 border border-lime-400/40 flex items-center justify-center shadow-lg">
-            <Sparkles className="w-8 h-8 text-lime-400 animate-pulse" />
-          </div>
           <h2 className="text-3xl font-light tracking-tighter">
             Fractal<span className="font-bold">Audio</span>
           </h2>
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-lime-400">
-            3D Audio-Visual Engine
-          </p>
         </div>
 
         {/* Description */}
         <p className="text-sm text-white/70 leading-relaxed relative z-10">
-          Select an audio input source to launch real-time 3D fractal rendering, sacred geometry, and multi-band beat reaction:
+          Choose an audio source to start the visualizer.
         </p>
 
         {/* Primary Action Buttons */}
@@ -62,42 +52,42 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
           {/* 1. MICROPHONE INPUT */}
           <button
             onClick={onSelectMic}
-            className="w-full py-3.5 px-4 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-mono font-bold text-sm tracking-wider transition-all shadow-lg hover:shadow-lime-400/20 flex items-center justify-center gap-2.5 group active:scale-[0.98]"
+            className="w-full py-3.5 px-4 rounded-md studio-primary font-bold text-sm transition-all flex items-center justify-center gap-2.5 group active:scale-[0.98]"
           >
-            <Mic className="w-5 h-5 text-black group-hover:scale-110 transition-transform" />
-            <span>USE LIVE MICROPHONE</span>
+            <Mic className="w-5 h-5 text-current " />
+            <span>Use microphone</span>
           </button>
 
           {/* 2. UPLOAD SONG */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="w-full py-3.5 px-4 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white font-mono font-bold text-sm tracking-wider transition-all shadow-lg flex items-center justify-center gap-2.5 group active:scale-[0.98]"
+            className="w-full py-3.5 px-4 rounded-md bg-white/10 hover:bg-white/20 border border-white/20 text-white font-bold text-sm transition-all flex items-center justify-center gap-2.5 group active:scale-[0.98]"
           >
-            <Upload className="w-5 h-5 text-sky-400 group-hover:scale-110 transition-transform" />
-            <span>UPLOAD AUDIO FILE (MP3 / WAV)</span>
+            <Upload className="w-5 h-5 text-neutral-300 " />
+            <span>Open audio file</span>
           </button>
 
           {/* 3. TRY DEMO LOOP */}
           <button
             onClick={onSelectDemo}
-            className="w-full py-2.5 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 hover:text-white font-mono text-xs tracking-wider transition-all flex items-center justify-center gap-2"
+            className="w-full py-2.5 px-4 rounded-md bg-white/5 hover:bg-white/10 text-white/60 hover:text-white text-xs transition-all flex items-center justify-center gap-2"
           >
-            <Music className="w-4 h-4 text-purple-400" />
-            <span>Or Play Generative Demo Loop</span>
+            <Music className="w-4 h-4 text-neutral-300" />
+            <span>Play demo loop</span>
           </button>
         </div>
 
-        <div className="pt-2 text-[10px] font-mono text-white/40 uppercase tracking-widest relative z-10 flex items-center justify-center gap-1.5 flex-wrap">
-          <span>POWERED BY</span>
+        <div className="pt-2 text-xs text-neutral-400 relative z-10 flex items-center justify-center gap-1.5 flex-wrap">
+          <span>Powered by</span>
           <a 
             href="https://trustnodelogic.com" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-lime-400/80 hover:text-lime-400 underline transition-colors"
+            className="text-neutral-300/80 hover:text-neutral-300 underline transition-colors"
           >
-            TRUST NODE LOGIC
+            Trust Node Logic
           </a>
-          <span>· JUSTIN RAY (JRAY)</span>
+          <span>Â· Justin Ray (JRay)</span>
         </div>
 
       </div>

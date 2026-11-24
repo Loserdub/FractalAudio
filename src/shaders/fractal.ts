@@ -15,6 +15,8 @@ uniform vec2 u_offset;
 uniform vec2 u_c;
 uniform int u_iterations;
 uniform vec3 u_color_base;
+uniform float u_hat;
+uniform float u_detail;
 uniform float u_audio_low;   // Composite Low (Sub + Kick)
 uniform float u_audio_mid;   // Low Mids (250Hz-800Hz)
 uniform float u_audio_high;  // Composite High (Pres + Treb + Air)
@@ -46,7 +48,9 @@ uniform float u_history_offset; // Circular ring buffer head offset (0.0 to 1.0)
 
 // Geometry & FX Uniforms
 uniform int u_geometry_mode;        // 0: Classic 2D Liquid, 1: 3D Mandelbulb, 2: 3D Julia, 3: 3D Ink Flow, 4: Sri Yantra, 5: Metatron, 6: Torus Knot, 7: Pyramid, 8: Tunnel
-uniform int u_fx_mode;              // 0: None, 1: Cyber Grid, 2: Chromatic Glitch, 3: Particle Dust
+uniform float u_fx_mix;
+uniform vec4 u_fx_waves;
+uniform int u_fx_mode;              // 0: None, 1: Pulse Grid, 2: Spectral Echo, 3: Particle Field
 uniform float u_kaleidoscope_folds; // 0, 4, 6, 8, 12, 16
 uniform float u_glow_intensity;
 
@@ -163,6 +167,43 @@ float getMicroDisplacement(vec3 p) {
 // ----------------------------------------------------
 // CLASSIC 2D LIQUID JULIA FRACTAL RENDERER (18-Band Responsive Engine)
 // ----------------------------------------------------
+float ridge(float radius, vec2 hit) {
+    return hit.y * (1.0 - smoothstep(0.0, 0.20, abs(radius - hit.x * 5.0)));
+}
+
+vec3 pulseGrid(vec2 pos, float frequency) {
+    float r = length(pos);
+    float crest = ridge(r, u_fx_waves.xy) + ridge(r, u_fx_waves.zw);
+    vec2 bent = pos + pos / max(r, 0.01) * crest * 0.13;
+    vec2 lines = abs(fract(bent * frequency + 0.5) - 0.5);
+    float ink = 1.0 - smoothstep(0.01, 0.075, min(lines.x, lines.y));
+    return getDynamicPalette(0.28 + crest * 0.22, u_color_base.x)
+        * ink * (0.20 + crest * 1.6) * u_fx_mix;
+}
+
+// Each angular sector contains a seeded streak at a different depth.
+float particleBurst(vec2 uv, vec2 hit, float seed) {
+    float r = length(uv);
+    float sector = (atan(uv.y, uv.x) / 6.283185 + 0.5) * 60.0;
+    float id = mod(floor(sector), 60.0);
+    float depth = fract(sin(id * 17.31 + seed) * 4375.13);
+    float offset = 0.15 + 0.7 * fract(sin(id * 31.7 + seed) * 7153.1);
+    float across = abs(fract(sector) - offset) * max(r, 0.02) * 0.105;
+    float head = 0.09 + depth * 0.17 + hit.x * (0.36 + depth * 0.8 + u_audio_sub * 0.45);
+    float trail = 0.018 + hit.x * 0.10 + depth * 0.018;
+    float streak = (1.0 - smoothstep(0.0008, 0.0025 + depth * 0.002, across))
+        * smoothstep(head - trail, head, r) * (1.0 - smoothstep(head, head + 0.005, r));
+    return streak * hit.y * (0.55 + depth + u_hat * step(0.50, depth) * 2.0);
+}
+
+vec3 particleField(vec2 uv) {
+    float sparks = particleBurst(uv, u_fx_waves.xy, 3.7)
+                 + particleBurst(uv, u_fx_waves.zw, 3.7);
+    return sparks * getDynamicPalette(0.58 + length(uv) * 0.35, u_color_base.x)
+        * smoothstep(0.08, 0.17, length(uv)) * u_fx_mix;
+}
+
+float kickWave(float distanceFromOrigin, vec2 wave);
 vec4 renderLiquidJulia2D(vec2 uv) {
     // Steady rotation with a small twist from the midrange
     float angle = u_motion_time * 0.32 + u_audio_mid * 0.38 + u_beat_snare * 0.06;
@@ -172,7 +213,8 @@ vec4 renderLiquidJulia2D(vec2 uv) {
     float rUv = length(uv);
     float historyWave2D = readAudioHistory(0.15, min(0.92, 0.035 + rUv * 0.55));
     float zoomFactor = (1.75 / max(0.2, u_zoom)) * (1.0 - u_audio_sub * 0.18 - u_beat_kick * 0.09 - historyWave2D * 0.045);
-    vec2 p = rot * (uv * zoomFactor) + u_offset;
+    float crest = kickWave(rUv * 2.8, u_kick_waves.xy) + 0.65 * kickWave(rUv * 2.8, u_kick_waves.zw);
+    vec2 p = rot * (uv * (zoomFactor - 0.24 * crest)) + u_offset;
     
     // 3. Harmonic Audio Orbit on Julia Constant C (lively, rhythmic breathing)
     vec2 c_mod = vec2(
@@ -225,48 +267,8 @@ vec4 renderLiquidJulia2D(vec2 uv) {
         color = vec3(0.003, 0.005, 0.009) + coreColor * corePulse;
     }
 
-    // FX Mode 1: Cyber Laser Grid (2D screen-space overlay — uses uv so grid is always visible)
-    if (u_fx_mode == 1) {
-        vec2 gridUV = uv * 4.5;
-        vec2 grid = abs(fract(gridUV - vec2(0.0, u_motion_time * 0.25)) - 0.5);
-        float line = min(grid.x, grid.y);
-        float gridGlow = (1.0 - smoothstep(0.0, 0.06, line));
-        vec3 gridCol = getDynamicPalette(u_motion_time * 0.008 + 0.3 + u_audio_kick * 0.1, u_color_base.x);
-        color += gridCol * gridGlow * 0.30 * (1.0 + u_audio_kick * 0.6 + u_audio_sub * 0.5);
-    }
-
-    // FX Mode 2: Chromatic edge warp — ONLY fires when explicitly selected (no audio bleed)
-    if (u_fx_mode == 2) {
-        float snareWarp = clamp(u_audio_snare * 0.10 + u_beat_snare * 0.08, 0.0, 0.18);
-        color = mix(color, color.brg, snareWarp);
-    }
-
-    // FX Mode 3: Particle Dust — hash-based procedural star scatter
-    if (u_fx_mode == 3) {
-        // Tile the screen into cells and place one star per cell
-        float cellSize = 0.05;
-        vec2 dustUV = uv + u_motion_time * vec2(0.012, -0.018);
-        vec2 cellId = floor(dustUV / cellSize);
-        vec2 cellUV = fract(dustUV / cellSize);
-        // Cheap hash (deterministic per cell)
-        vec2 hashIn = cellId + vec2(127.1, 311.7);
-        float h1 = fract(sin(dot(hashIn, vec2(127.1, 311.7))) * 43758.5453);
-        float h2 = fract(sin(dot(hashIn + 1.0, vec2(269.5, 183.3))) * 43758.5453);
-        float h3 = fract(sin(dot(hashIn + 2.0, vec2(419.2, 371.9))) * 43758.5453);
-        // Star center offset within the cell
-        vec2 starPos = mix(vec2(0.23), vec2(0.77), vec2(h1, h2));
-        float dist = length(cellUV - starPos);
-        // Twinkle animation: each star has its own phase
-        float twinkle = 0.66 + (0.22 + u_spectral_flatness * 0.10) * sin(u_motion_time * (2.0 + h3 * 6.0) + h1 * 6.2831);
-        float starRadius = (0.08 + h3 * 0.10) * twinkle * (1.0 + u_audio_treb * 0.8 + u_audio_air * 0.6);
-        float star = (1.0 - smoothstep(0.0, starRadius, dist));
-        // Audio-reactive brightness: treble and air drive sparkle
-        float brightness = (0.6 + h2 * 0.4) * (1.0 + u_audio_treb * 1.2 + u_audio_air * 0.8 + u_beat_snare * 0.5);
-        if (star > 0.0) {
-            vec3 starCol = getDynamicPalette(h1 + h3 * 0.5 + u_motion_time * 0.015 + u_beat_kick * 0.035, u_color_base.x);
-            color += starCol * star * brightness;
-        }
-    }
+    if (u_fx_mode == 1) color += pulseGrid(uv * 4.0, 1.45);
+    if (u_fx_mode == 3) color += particleField(uv);
 
     color = toneMapACES(color * (1.0 + u_audio_kick * 0.06 + u_beat_kick * 0.05));
     return vec4(color, 1.0);
@@ -282,7 +284,7 @@ float mapJulia3D(vec3 p, out float trap) {
     
     // Stable quaternion constant C with responsive harmonic audio orbit
     vec4 c = vec4(
-        u_c.x + cos(u_motion_time * 0.22) * (0.035 + u_audio_mid * 0.045),
+        u_c.x + u_beat_snare * 0.11 + cos(u_motion_time * 0.22) * (0.035 + u_audio_mid * 0.045),
         u_c.y + sin(u_motion_time * 0.18) * (0.035 + u_audio_pres * 0.045),
         sin(u_motion_time * 0.26 + u_audio_sub * 0.6) * (0.08 + u_audio_kick * 0.07),
         cos(u_motion_time * 0.22 + u_audio_treb * 0.6) * (0.08 + u_audio_air * 0.07)
@@ -323,7 +325,7 @@ float mapMandelbulb(vec3 p, out float trap) {
     trap = 1.0;
     
     // Reserve changes to the fractal exponent for slower gestures.
-    float power = 7.0 + u_audio_mid * 3.5 + u_audio_sub;
+    float power = 7.0 + u_beat_kick * 0.85 + u_audio_mid * 3.5 + u_audio_sub;
 
     for (int i = 0; i < 8; i++) {
         r = length(w);
@@ -365,6 +367,7 @@ float mapInkFlow(vec3 p, out float trap) {
         cos(p.x * 2.65 + phase * 0.88 - p.y * 0.90)
     );
     vec3 q = (p + bend * (0.24 + mids * 0.57)) / (1.0 + bass * vec3(0.22, 0.43, 0.16));
+    q.x += u_beat_snare * 0.18 * sin(q.y * 3.0);
     float distanceFromOrigin = length(p + vec3(0.0, 0.78, 0.0));
     float wave = kickWave(distanceFromOrigin, u_kick_waves.xy) + kickWave(distanceFromOrigin, u_kick_waves.zw) * 0.65;
     float radius = 0.83 + bass * 0.24 + wave * 0.32;
@@ -405,7 +408,7 @@ float mapMetatronCube(vec3 p, out float trap) {
     
     vec3 absP = abs(pScaled);
     // Band 9: outer sphere radii — vocal low exclusive
-    float outerSpheres = length(absP - vec3(0.55, 0.55, 0.55)) - (0.14 + u_bands[9] * 0.12 + u_bands[12] * 0.08);
+    float outerSpheres = length(absP - vec3(0.55 + u_beat_kick * 0.14)) - (0.14 + u_bands[9] * 0.12 + u_bands[12] * 0.08);
     
     float beam = length(vec2(length(pScaled.xy) - 0.55, pScaled.z)) - (0.02 + u_bands[7] * 0.05 + u_bands[14] * 0.04);
     
@@ -424,7 +427,7 @@ float mapTorusKnot(vec3 p, out float trap) {
     
     // Band 5: torus knot & tendril braiding radius
     vec2 cl = vec2(r - (0.70 + u_bands[2] * 0.20 + u_bands[5] * 0.18), q.z);
-    float angleKnot = a * 1.5;
+    float angleKnot = a * 1.5 + u_beat_snare * 0.55;
     vec2 knotP = vec2(sin(angleKnot), cos(angleKnot)) * (0.18 + u_bands[5] * 0.12);
     
     float knotD = length(cl - knotP) - (0.08 + u_bands[11] * 0.06 + u_bands[14] * 0.05);
@@ -458,9 +461,11 @@ float mapCosmicTunnel(vec3 p, out float trap) {
     float historyWave = getTemporalAcousticWave(p, 0.08) * 0.20;
     // Band 8: aperture cavity breath — snare body exclusive
     float haloRadius = 1.1 + u_bands[8] * 0.24 + u_audio_sub * 0.32 + historyWave;
+    float front = kickWave(p.z + 2.0, u_kick_waves.xy) + 0.65 * kickWave(p.z + 2.0, u_kick_waves.zw);
+    haloRadius += front * 0.22;
     float tunnel = abs(r - haloRadius) - 0.07;
     // Band 8: rib depth — snare body exclusive
-    float rib = abs(sin(p.z * 2.5 + u_motion_time * 1.2 + u_bands[1] * 1.8)) - (0.05 + u_bands[8] * 0.10 + u_bands[12] * 0.06);
+    float rib = -0.08 * u_hat + abs(sin(p.z * 2.5 + u_motion_time * 1.2 + u_bands[1] * 1.8)) - (0.05 + u_bands[8] * 0.10 + u_bands[12] * 0.06);
     
     trap = r;
     return max(tunnel, rib);
@@ -482,7 +487,7 @@ float mapScene(vec3 p, out float trap) {
     // Surface detail optimization: Smoothly blend expensive micro-displacements 
     // to prevent distance-field discontinuities which cause blown-out phantom boundaries
     float dispBlend = 1.0 - smoothstep(0.0, 0.15, abs(d));
-    if (u_geometry_mode != 3 && dispBlend > 0.0) {
+    if (u_geometry_mode != 3 && u_detail > 0.5 && dispBlend > 0.0) {
         d += getMicroDisplacement(p) * dispBlend;
     }
     return d;
@@ -520,10 +525,6 @@ void main() {
         return;
     }
     
-    if (u_fx_mode == 2) {
-        uv.x += sin(uv.y * 22.0 + u_motion_time * 1.5) * 0.003 * (u_audio_snare + u_audio_treb * 0.3 + u_beat_snare * 0.3);
-    }
-
     uv = applyKaleidoscope(uv, u_kaleidoscope_folds);
 
     float cameraBreath = u_geometry_mode == 3 ? 0.0 : u_audio_sub * 0.035 + u_beat_kick * 0.025;
@@ -559,7 +560,7 @@ void main() {
         // Beer-Lambert Volumetric Absorption Mist inside cavernous apertures
         float haloRadius = 0.32 + u_audio_kick * 0.10;
         float density = clamp((haloRadius - d) / haloRadius, 0.0, 1.0);
-        if (density > 0.0) {
+        if (u_detail > 0.5 && density > 0.0) {
             float extinction = exp(-t * 0.14);
             float weight = (density * density) * extinction;
             accumMist += weight;
@@ -624,55 +625,14 @@ void main() {
     volumetricMist *= (1.0 + u_bands[13] * 1.8);
     finalColor += volumetricMist * (1.0 + u_glow_intensity * 0.5);
 
-    // Cyber grid effect (FX Mode 1) — 3D screen-space floor grid (always visible)
-    if (u_fx_mode == 1) {
-        float floorY = -1.6;
-        if (rd.y < 0.0) {
-            float tFloor = (floorY - ro.y) / rd.y;
-            if (tFloor > 0.0 && (!hit || tFloor < t)) {
-                vec3 pFloor = ro + rd * tFloor;
-                vec2 grid = abs(fract(pFloor.xz * 1.2 - vec2(0.0, u_motion_time * 0.45)) - 0.5);
-                float line = min(grid.x, grid.y);
-                float gridGlow = (1.0 - smoothstep(0.0, 0.05, line)) * exp(-tFloor * 0.20);
-                vec3 gridCol = getDynamicPalette(u_motion_time * 0.008 + 0.3 + u_audio_kick * 0.1, u_color_base.x);
-                finalColor += gridCol * gridGlow * 0.35 * (1.0 + u_audio_kick * 0.5 + u_audio_sub * 0.4);
-            }
-        }
-        // Also overlay a screen-space grid in empty areas
-        vec2 sgrid = abs(fract(uv * 5.5 - vec2(0.0, u_motion_time * 0.15)) - 0.5);
-        float sline = min(sgrid.x, sgrid.y);
-        float sgridGlow = (1.0 - smoothstep(0.0, 0.06, sline)) * (hit ? 0.0 : 1.0);
-        vec3 sgridCol = getDynamicPalette(u_motion_time * 0.006 + 0.4, u_color_base.x);
-        finalColor += sgridCol * sgridGlow * 0.20 * (1.0 + u_audio_sub * 0.5);
-    }
-
-    // Band 11 (Snare Snap): Chromatic glitch flare — ONLY fires when FX mode 2 is selected
-    if (u_fx_mode == 2) {
-        float chromaticSpread = clamp(u_bands[11] * 0.40 + u_beat_snare * 0.25 + u_energy_flux * 0.15 + u_beat_kick * 0.08, 0.0, 1.0);
-        finalColor = mix(finalColor, vec3(finalColor.g, finalColor.b, finalColor.r), chromaticSpread);
-    }
-
-    // Band 16 (Air Low): Cosmic particle dust / starlight scatter — hash-based procedural stars
-    if (u_fx_mode == 3) {
-        float cellSize = 0.045;
-        vec2 dustUV = uv + u_motion_time * vec2(0.012, -0.018);
-        vec2 cellId = floor(dustUV / cellSize);
-        vec2 cellUV = fract(dustUV / cellSize);
-        vec2 hashIn = cellId + vec2(127.1, 311.7);
-        float h1 = fract(sin(dot(hashIn, vec2(127.1, 311.7))) * 43758.5453);
-        float h2 = fract(sin(dot(hashIn + 1.0, vec2(269.5, 183.3))) * 43758.5453);
-        float h3 = fract(sin(dot(hashIn + 2.0, vec2(419.2, 371.9))) * 43758.5453);
-        vec2 starPos = mix(vec2(0.23), vec2(0.77), vec2(h1, h2));
-        float dist = length(cellUV - starPos);
-        float twinkle = 0.66 + (0.22 + u_spectral_flatness * 0.10) * sin(u_motion_time * (2.0 + h3 * 6.0) + h1 * 6.2831);
-        float starRadius = (0.08 + h3 * 0.10) * twinkle * (1.0 + u_bands[16] * 1.2 + u_bands[17] * 0.8);
-        float star = (1.0 - smoothstep(0.0, starRadius, dist));
-        float brightness = (0.5 + h2 * 0.5) * (1.0 + u_bands[16] * 1.5 + u_audio_air * 1.0 + u_beat_snare * 0.6);
-        if (star > 0.0) {
-            vec3 starCol = getDynamicPalette(h1 + h3 * 0.5 + u_motion_time * 0.012 + u_beat_kick * 0.035, u_color_base.x);
-            finalColor += starCol * star * brightness;
+    if (u_fx_mode == 1 && rd.y < -0.001) {
+        float distanceToFloor = (-1.6 - ro.y) / rd.y;
+        if (distanceToFloor > 0.0 && (!hit || distanceToFloor < t)) {
+            vec2 floorPos = (ro + rd * distanceToFloor).xz;
+            finalColor += pulseGrid(floorPos, 1.5) * exp(-distanceToFloor * 0.15);
         }
     }
+    if (u_fx_mode == 3) finalColor += particleField(uv) * (hit ? 0.42 : 1.0);
 
     // Refined ACES Filmic Tone Mapping with gentle dynamic exposure kick
     finalColor = toneMapACES(finalColor * (1.0 + u_bands[2] * 0.06 + u_beat_kick * 0.05));
@@ -686,5 +646,24 @@ void main() {
     finalColor *= (1.0 - vignette * (0.78 + u_bands[0] * 0.20));
 
     gl_FragColor = vec4(finalColor, 1.0);
+}
+`;
+
+export const echoFragmentSource = `
+precision mediump float;
+uniform sampler2D u_scene;
+uniform vec2 u_pixel;
+uniform float u_attack;
+uniform float u_mix;
+void main() {
+    vec2 uv = gl_FragCoord.xy * u_pixel;
+    vec2 shift = vec2(1.0, 0.35) * u_pixel.y * (1.0 + u_attack * 9.0);
+    shift.x *= u_pixel.x / u_pixel.y;
+    vec3 base = texture2D(u_scene, uv).rgb;
+    vec3 left = texture2D(u_scene, uv - shift).rgb;
+    vec3 right = texture2D(u_scene, uv + shift).rgb;
+    vec3 cyan = vec3(0.08, 0.85, 1.0) * length(max(left - base, 0.0));
+    vec3 magenta = vec3(1.0, 0.12, 0.7) * length(max(right - base, 0.0));
+    gl_FragColor = vec4(base + (cyan + magenta) * u_attack * u_mix, 1.0);
 }
 `;

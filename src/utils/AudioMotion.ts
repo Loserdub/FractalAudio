@@ -1,3 +1,4 @@
+import { transientQueues } from './transients';
 import { damp } from './Dampener';
 
 const BAND_EDGES_HZ = [20, 45, 85, 130, 195, 280, 410, 580, 820, 1160, 1650, 2370, 3340, 4740, 6680, 9470, 13350, 16700, 20000];
@@ -15,7 +16,11 @@ function hitStrength(flux: number, threshold: number): number {
 export class AudioMotion {
   readonly bands = new Float32Array(BAND_WEIGHTS.length);
   readonly historyRow: Uint8Array;
+  readonly fxWaves = new Float32Array(4);
   readonly kickWaves = new Float32Array(4);
+  hat = 0;
+  private hits: {band: number; time: number; strength: number}[] = [];
+  private sourceStart = 0;
   centroid = 0.25;
   flatness = 0.15;
   flux = 0;
@@ -54,10 +59,15 @@ export class AudioMotion {
   }
 
   // The display interpolates envelopes every frame. Spectrum and history share a 30 Hz clock.
-  update(analyser: AnalyserNode | null, resetKey: number, now: number, dt: number, sensitivity: number): number {
+  update(analyser: AnalyserNode | null, resetKey: number, now: number, dt: number, sensitivity: number, response: number): number {
     if (analyser !== this.analyser || resetKey !== this.resetKey) {
       this.analyser = analyser;
       this.resetKey = resetKey;
+      this.sourceStart = analyser?.context.currentTime ?? 0;
+      this.hits.length = 0;
+      this.lastKick = this.previousKick = this.lastSnare = -Infinity;
+      this.kick = this.snare = this.hat = this.kickPeak = this.snarePeak = 0;
+      this.kickDetected = this.snareDetected = false;
       this.seeded = false;
       this.kickMean = 0;
       this.snareMean = 0;
@@ -82,8 +92,8 @@ export class AudioMotion {
     }
 
     for (let i = 0; i < this.bands.length; i++) {
-      const attack = i < 6 ? 0.10 : i < 12 ? 0.14 : 0.055;
-      const release = i < 6 ? 0.42 : i < 12 ? 0.48 : 0.20;
+      const attack = (i < 6 ? 0.045 : i < 12 ? 0.065 : 0.030) * (0.65 + response);
+      const release = (i < 6 ? 0.24 : i < 12 ? 0.32 : 0.14) * (0.65 + response);
       this.bands[i] = envelope(this.bands[i], this.targets[i], dt, attack, release);
     }
 
@@ -94,9 +104,43 @@ export class AudioMotion {
     this.snare = envelope(this.snare, this.snarePeak, dt, 0.020, 0.105);
     this.kickPeak *= Math.exp(-dt / 0.10);
     this.snarePeak *= Math.exp(-dt / 0.085);
+    const queue = analyser && transientQueues.get(analyser);
+    if (queue) {
+      const clock = analyser.context.currentTime;
+      for (const hit of queue) {
+        const age = clock - hit.time;
+        if (hit.time < this.sourceStart || age > 0.35) continue;
+        this.hits.push(hit);
+        if (hit.band === 0) {
+          this.previousKick = this.lastKick;
+          this.previousKickStrength = this.lastKickStrength;
+          this.lastKick = now - Math.max(0, age) * 1000;
+          this.lastKickStrength = Math.min(1, hit.strength * sensitivity);
+          this.kickDetected = true;
+        } else if (hit.band === 1) this.snareDetected = true;
+      }
+      queue.length = 0;
+      while (this.hits.length && clock - this.hits[0].time > 0.65) this.hits.shift();
+      this.kick = this.snare = this.hat = 0;
+      // Evaluate each critically damped impulse at its actual audio-clock age.
+      for (const hit of this.hits) {
+        const age = Math.max(0, clock - hit.time) * 44 / (0.65 + response);
+        const displacement = hit.strength * sensitivity * age * Math.exp(1 - age);
+        if (hit.band === 0) this.kick = Math.min(1, this.kick + displacement);
+        else if (hit.band === 1) this.snare = Math.min(1, this.snare + displacement);
+        else this.hat = Math.min(1, this.hat + displacement);
+      }
+    } else this.hat = this.bands[15] * this.flux;
     this.writeWave(0, now, this.lastKick, this.lastKickStrength);
     this.writeWave(2, now, this.previousKick, this.previousKickStrength);
 
+    const lifetime = 0.35 + response * 0.8;
+    for (let i = 0; i < 2; i++) {
+      const age = Math.max(0, (now - (i ? this.previousKick : this.lastKick)) / 1000);
+      const strength = i ? this.previousKickStrength : this.lastKickStrength;
+      this.fxWaves[i * 2] = Math.min(age, lifetime);
+      this.fxWaves[i * 2 + 1] = strength * Math.max(0, 1 - age / lifetime);
+    }
     return historySteps;
   }
 
@@ -161,7 +205,7 @@ export class AudioMotion {
       this.flatnessTarget = mean > 0.005 ? Math.min(1, Math.exp(logTotal / count) / mean) : 0.15;
       const fluxScale = Math.min(1.4, SAMPLE_PERIOD_MS / 1000 / dt);
       this.fluxTarget = this.seeded ? Math.min(1, 12 * flux * fluxScale / Math.max(1, count)) : 0;
-      if (this.seeded) {
+      if (this.seeded && !transientQueues.has(analyser)) {
         this.detectHits(kickFlux * fluxScale / Math.max(1, kickBins), snareFlux * fluxScale / Math.max(1, snareBins), now, dt, sensitivity);
       }
       this.previous.set(this.spectrum);

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Mic, Upload, Music, Play, Pause, ChevronUp, Shuffle, Box, Compass, Activity, Zap, Video, Camera, FileDown, Disc, Wand2, Type, HelpCircle, Gauge, Maximize, Minimize } from 'lucide-react';
+import { Settings, Mic, Upload, Music, Play, Pause, ChevronUp, Shuffle, Compass, Activity, Zap, Video, Camera, FileDown, Disc, Type, HelpCircle, Gauge, Maximize, Minimize } from 'lucide-react';
 import { JULIA_PRESETS } from '../constants';
 import { AudioMode } from '../hooks/useAudioAnalyzer';
 import { AudioMetrics, subscribeAudioMetrics } from './Visualizer';
@@ -27,10 +27,14 @@ interface ControlsProps {
   setColorBase: (v: { h: number; s: number; l: number }) => void;
   juliaC: { x: number; y: number };
   setJuliaC: (v: { x: number; y: number }) => void;
+  response: number;
+  setResponse: (value: number) => void;
   sensitivity: number;
   setSensitivity: (v: number) => void;
   geometryMode: number;
   setGeometryMode: (v: number) => void;
+  fxMix: number;
+  setFxMix: (value: number) => void;
   fxMode: number;
   setFxMode: (v: number) => void;
   kaleidoscopeFolds: number;
@@ -77,17 +81,6 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
   const centroid = metrics?.spectralCentroid || 0.3;
   const flatness = metrics?.spectralFlatness || 0.2;
 
-// 18-channel curated dark alternative spectral colors for HUD bars
-  const getBandColor = (idx: number) => {
-    if (idx < 2) return '#dc2626'; // Sub (Blood Red)
-    if (idx < 5) return '#991b1b'; // Kick (Dark Crimson)
-    if (idx < 8) return '#1e3a8a'; // Lower Mids (Abyssal Blue)
-    if (idx < 11) return '#3b82f6'; // Vocal Mids (Ice Blue)
-    if (idx < 14) return '#6b21a8'; // Presence (Dark Violet)
-    if (idx < 16) return '#7c3aed'; // Treble (Cryo Violet)
-    return '#f1f5f9'; // Air / Brilliance (Stark White)
-  };
-
   // 18-band visual control labels for HUD hover tooltip
   const BAND_VISUAL_LABELS = [
     'B0 Sub1: Lens Shockwave',
@@ -101,7 +94,7 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
     'B8 Snare: Tunnel Aperture',
     'B9 Vocal: Mandala Ring',
     'B10 Vocal: Palette Drift',
-    'B11 Snap: Chromatic Glitch',
+    'B11 Snap: Spectral Echo',
     'B12 Pres: Crystal Ridge',
     'B13 Pres: Mist Emission',
     'B14 Treb: Fresnel Sheen',
@@ -116,30 +109,30 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
       {/* REAL-TIME BEAT TRANSIENT HUD LAMPS */}
       <div className="grid grid-cols-2 gap-2 pt-1">
         <div 
-          className="py-1.5 px-2 rounded-lg border text-center transition-all duration-100 flex items-center justify-center gap-1.5"
+          className="py-1.5 px-2 rounded-md border text-center transition-all duration-100 flex items-center justify-center gap-1.5"
           style={{
-            backgroundColor: kickIntensity > 0.15 ? `rgba(163, 230, 53, ${0.15 + kickIntensity * 0.45})` : 'rgba(255, 255, 255, 0.03)',
-            borderColor: kickIntensity > 0.15 ? 'rgba(163, 230, 53, 0.8)' : 'rgba(255, 255, 255, 0.1)',
-            boxShadow: kickIntensity > 0.15 ? `0 0 ${kickIntensity * 20}px rgba(163, 230, 53, 0.6)` : 'none'
+            backgroundColor: kickIntensity > 0.15 ? `rgba(195, 195, 195, ${0.05 + kickIntensity * 0.22})` : 'rgba(255, 255, 255, 0.03)',
+            borderColor: kickIntensity > 0.15 ? 'rgba(195, 195, 195, 0.8)' : 'rgba(255, 255, 255, 0.1)',
+
           }}
         >
-          <Zap size={12} className={kickIntensity > 0.15 ? 'text-lime-400 animate-pulse' : 'text-white/30'} />
-          <span className={`text-[10px] font-mono font-bold tracking-wider uppercase ${kickIntensity > 0.15 ? 'text-lime-400' : 'text-white/40'}`}>
-            KICK / TRANSIENT
+          <Zap size={12} className={kickIntensity > 0.15 ? 'text-neutral-300 ' : 'text-white/30'} />
+          <span className={`text-xs  font-bold   ${kickIntensity > 0.15 ? 'text-neutral-300' : 'text-neutral-400'}`}>
+            Kick
           </span>
         </div>
 
         <div 
-          className="py-1.5 px-2 rounded-lg border text-center transition-all duration-100 flex items-center justify-center gap-1.5"
+          className="py-1.5 px-2 rounded-md border text-center transition-all duration-100 flex items-center justify-center gap-1.5"
           style={{
-            backgroundColor: snareIntensity > 0.15 ? `rgba(56, 189, 248, ${0.15 + snareIntensity * 0.45})` : 'rgba(255, 255, 255, 0.03)',
-            borderColor: snareIntensity > 0.15 ? 'rgba(56, 189, 248, 0.8)' : 'rgba(255, 255, 255, 0.1)',
-            boxShadow: snareIntensity > 0.15 ? `0 0 ${snareIntensity * 20}px rgba(56, 189, 248, 0.6)` : 'none'
+            backgroundColor: snareIntensity > 0.15 ? `rgba(195, 195, 195, ${0.05 + snareIntensity * 0.22})` : 'rgba(255, 255, 255, 0.03)',
+            borderColor: snareIntensity > 0.15 ? 'rgba(195, 195, 195, 0.8)' : 'rgba(255, 255, 255, 0.1)',
+
           }}
         >
-          <Activity size={12} className={snareIntensity > 0.15 ? 'text-sky-400 animate-pulse' : 'text-white/30'} />
-          <span className={`text-[10px] font-mono font-bold tracking-wider uppercase ${snareIntensity > 0.15 ? 'text-sky-400' : 'text-white/40'}`}>
-            SNARE / ATTACK
+          <Activity size={12} className={snareIntensity > 0.15 ? 'text-neutral-300 ' : 'text-white/30'} />
+          <span className={`text-xs  font-bold   ${snareIntensity > 0.15 ? 'text-neutral-300' : 'text-neutral-400'}`}>
+            Snare
           </span>
         </div>
       </div>
@@ -147,9 +140,9 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
       {/* 18-BAND PSYCHOACOUSTIC EQUALIZER HUD */}
       {bands.length > 0 && (
         <div className="space-y-1.5 pt-1.5 border-t border-white/10">
-          <div className="flex justify-between items-center text-[9px] font-mono uppercase tracking-wider text-white/50">
-            <span className="text-lime-400 font-bold">18-Ch Psychoacoustic Mixer</span>
-            <span className="text-[8px] text-white/40">20Hz — 20kHz</span>
+          <div className="flex justify-between items-center text-xs text-neutral-400">
+            <span className="text-neutral-300 font-bold">Spectrum</span>
+            <span className="text-xs text-neutral-400">20 Hz to 20 kHz</span>
           </div>
 
         <div className="flex items-end gap-0.5 h-10 bg-black/60 p-1 rounded-md border border-white/10">
@@ -163,13 +156,13 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
                   className="w-full transition-all duration-75 rounded-xs"
                   style={{
                     height: `${Math.min(100, Math.max(6, val * 100))}%`,
-                    backgroundColor: getBandColor(idx),
-                    boxShadow: val > 0.5 ? `0 0 6px ${getBandColor(idx)}` : 'none'
+                    backgroundColor: 'var(--studio-silver)',
+
                   }}
                 />
                 {/* Hover tooltip */}
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:flex flex-col items-center z-50 pointer-events-none">
-                  <div className="bg-black/95 border border-white/20 rounded px-1.5 py-1 text-[8px] font-mono text-white/90 whitespace-nowrap shadow-xl">
+                  <div className="bg-black/95 border border-white/20 rounded px-1.5 py-1 text-xs text-white/90 whitespace-nowrap">
                     {BAND_VISUAL_LABELS[idx]}
                   </div>
                   <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-white/20" />
@@ -179,16 +172,16 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
           </div>
 
           {/* TIMBRAL DESCRIPTORS (CENTROID & FLATNESS) */}
-          <div className="grid grid-cols-2 gap-2 pt-0.5 text-[9px] font-mono">
+          <div className="grid grid-cols-2 gap-2 pt-0.5 text-xs">
             <div className="flex items-center justify-between px-2 py-1 rounded bg-white/5 border border-white/5 min-w-0 overflow-hidden">
-              <span className="text-white/40 truncate mr-1" title="Filter Brightness (Centroid)">Filter:</span>
-              <span className="text-amber-300 font-bold tabular-nums w-10 text-right shrink-0">
+              <span className="text-neutral-400 truncate mr-1" title="Filter Brightness (Centroid)">Filter:</span>
+              <span className="text-neutral-300 font-bold tabular-nums w-10 text-right shrink-0">
                 {(centroid * 100).toFixed(0)}%
               </span>
             </div>
             <div className="flex items-center justify-between px-2 py-1 rounded bg-white/5 border border-white/5 min-w-0 overflow-hidden">
-              <span className="text-white/40 truncate mr-1" title="Tonality / Spectral Flatness">Tonality:</span>
-              <span className="text-sky-300 font-bold w-14 text-right shrink-0 truncate">
+              <span className="text-neutral-400 truncate mr-1" title="Tonality / Spectral Flatness">Tonality:</span>
+              <span className="text-neutral-300 font-bold w-14 text-right shrink-0 truncate">
                 {flatness < 0.3 ? 'Tonal' : flatness < 0.6 ? 'Balanced' : 'Noise'}
               </span>
             </div>
@@ -221,10 +214,14 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
   setJuliaC,
   sensitivity,
   setSensitivity,
+  response,
+  setResponse,
   geometryMode,
   setGeometryMode,
   fxMode,
   setFxMode,
+  fxMix,
+  setFxMix,
   kaleidoscopeFolds,
   setKaleidoscopeFolds,
   rotSpeed,
@@ -269,9 +266,9 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
   const FX_MODES = [
     { id: 0, label: 'Off' },
-    { id: 1, label: 'Cyber Laser Grid' },
-    { id: 2, label: 'Chromatic Glitch' },
-    { id: 3, label: 'Particle Dust' },
+    { id: 1, label: 'Pulse Grid' },
+    { id: 2, label: 'Spectral Echo' },
+    { id: 3, label: 'Particle Field' },
   ];
 
   const KALEIDOSCOPE_FOLDS = [
@@ -289,9 +286,9 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
         {toggleFullscreen && (
           <button
             onClick={toggleFullscreen}
-            className={`p-2.5 rounded-full transition-all border shadow-xl flex items-center justify-center ${
+            className={`p-2.5 rounded-md transition-all border  flex items-center justify-center ${
               isFullscreen
-                ? 'bg-lime-400 text-black border-lime-400 hover:bg-lime-300 shadow-[0_0_12px_rgba(163,230,53,0.4)]'
+                ? 'studio-selected hover:bg-neutral-700 '
                 : 'bg-black/60 backdrop-blur-md text-white hover:bg-white/10 border-white/15'
             }`}
             title={isFullscreen ? "Exit Fullscreen (F)" : "Enter Fullscreen (F)"}
@@ -302,28 +299,27 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="bg-black/60 backdrop-blur-md p-2.5 rounded-full text-white hover:bg-white/10 transition-colors border border-white/15 shadow-xl flex items-center gap-2"
+          className="bg-black/60 backdrop-blur-md p-2.5 rounded-md text-white hover:bg-white/10 transition-colors border border-white/15 flex items-center gap-2"
           title={isOpen ? "Collapse Controls" : "Open Controls"}
         >
           {isRecording && (
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+            <span className="w-2.5 h-2.5 rounded-full bg-neutral-700" />
           )}
           {isOpen ? <ChevronUp size={20} /> : <Settings size={20} />}
         </button>
       </div>
 
       {isOpen && (
-        <div className="bg-black/80 backdrop-blur-2xl p-6 rounded-2xl border border-white/15 w-84 sm:w-96 shadow-2xl text-white/90 max-h-[85vh] overflow-y-auto space-y-6">
+        <div className="studio-surface studio-panel p-5 sm:p-6 text-white/90 overflow-y-auto space-y-6">
           
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-white/10">
             <div>
-              <h2 className="text-sm font-mono font-bold tracking-widest uppercase text-white/90">VISUALIZER ENGINE</h2>
-              <span className="text-[10px] font-mono text-lime-400">3D Ink Flow & Sacred Geometry</span>
+              <h2 className="text-sm font-bold text-white/90">Visualizer controls</h2>
             </div>
             <button
               onClick={randomize}
-              className="p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all"
+              className="p-2 rounded-md bg-white/10 text-white hover:bg-white/20 transition-all"
               title="Randomize Parameters"
             >
               <Shuffle size={16} />
@@ -331,15 +327,15 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
           </div>
 
           {/* RECORDING & CAPTURE SUITE */}
-          <div className="p-3.5 rounded-xl bg-gradient-to-br from-red-950/40 via-zinc-900/60 to-black border border-red-500/30 space-y-3 shadow-lg">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Video size={15} className="text-red-400" />
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-white">RECORD & CAPTURE</span>
+                <Video size={15} className="text-neutral-300" />
+                <span className="text-xs font-bold text-white">Capture</span>
               </div>
               {isRecording && (
-                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-[10px] font-mono text-red-400">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-neutral-300/20 border border-neutral-300/40 text-xs text-neutral-300">
+                  <span className="w-2 h-2 rounded-full bg-neutral-700" />
                   <span>REC ({formatTime(recordingSeconds)})</span>
                 </div>
               )}
@@ -349,24 +345,24 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
               {!isRecording ? (
                 <button
                   onClick={startRecording}
-                  className="py-2.5 px-3 rounded-lg bg-red-500 hover:bg-red-600 text-white font-mono text-xs font-bold tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5"
+                  className="py-2.5 px-3 rounded-md studio-selected text-xs font-bold transition-all flex items-center justify-center gap-1.5"
                 >
-                  <Disc size={15} className="animate-spin-slow" />
+                  <Disc size={15} />
                   <span>Record Video</span>
                 </button>
               ) : (
                 <button
                   onClick={stopRecording}
-                  className="py-2.5 px-3 rounded-lg bg-zinc-900 border border-red-500/60 text-red-400 hover:bg-red-500/20 font-mono text-xs font-bold tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 animate-pulse"
+                  className="py-2.5 px-3 rounded-md bg-zinc-900 border border-neutral-300/60 text-neutral-300 hover:bg-neutral-600/20 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
                 >
-                  <span className="w-2.5 h-2.5 rounded-sm bg-red-500" />
+                  <span className="w-2.5 h-2.5 rounded-sm bg-neutral-700" />
                   <span>Stop ({formatTime(recordingSeconds)})</span>
                 </button>
               )}
 
               <button
                 onClick={takeSnapshot}
-                className="py-2.5 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-white font-mono text-xs font-bold tracking-wider transition-all flex items-center justify-center gap-1.5"
+                className="py-2.5 px-3 rounded-md bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5"
               >
                 <Camera size={15} />
                 <span>PNG Snapshot</span>
@@ -376,7 +372,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
             {hasSessionKeyframes && (
               <button
                 onClick={exportSessionJson}
-                className="w-full py-1.5 px-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white font-mono text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                className="w-full py-1.5 px-3 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs transition-all flex items-center justify-center gap-2"
               >
                 <FileDown size={13} />
                 <span>Export Session Automation (.json)</span>
@@ -385,18 +381,18 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
           </div>
 
           {/* ARTIST WATERMARK & TYPOGRAPHY OVERLAY */}
-          <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-3 shadow-md">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Type size={15} className="text-lime-400" />
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-white">Artist Watermark Overlay</span>
+                <Type size={15} className="text-neutral-300" />
+                <span className="text-xs font-bold text-white">Artist watermark</span>
               </div>
               <button
                 onClick={() => setBannerConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
-                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider transition-all ${
+                className={`px-2.5 py-0.5 rounded-full text-xs  font-bold   transition-all ${
                   bannerConfig.enabled
-                    ? 'bg-lime-400 text-black shadow-sm'
-                    : 'bg-white/10 text-white/50 hover:bg-white/20'
+                    ? 'studio-selected '
+                    : 'bg-white/10 text-neutral-400 hover:bg-white/20'
                 }`}
               >
                 {bannerConfig.enabled ? 'ACTIVE' : 'OFF'}
@@ -407,7 +403,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
               <div className="space-y-2.5 pt-1 border-t border-white/10 text-xs">
                 {/* Artist Name Input */}
                 <div>
-                  <label className="text-[10px] font-mono uppercase tracking-wider text-white/50 block mb-1">
+                  <label className="text-xs text-neutral-400 block mb-1">
                     Artist / Project Name
                   </label>
                   <input
@@ -415,13 +411,13 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                     value={bannerConfig.artistName}
                     onChange={(e) => setBannerConfig(prev => ({ ...prev, artistName: e.target.value }))}
                     placeholder="e.g. JUSTIN RAY"
-                    className="w-full bg-black/60 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder:text-white/30 focus:border-lime-400 focus:outline-none font-mono"
+                    className="w-full bg-black/60 border border-white/15 rounded-md px-2.5 py-1.5 text-xs text-white placeholder:text-white/30 focus:border-neutral-300 focus:outline-none"
                   />
                 </div>
 
                 {/* Subtitle / Track Title Input */}
                 <div>
-                  <label className="text-[10px] font-mono uppercase tracking-wider text-white/50 block mb-1">
+                  <label className="text-xs text-neutral-400 block mb-1">
                     Subtitle / Track Title
                   </label>
                   <input
@@ -429,13 +425,13 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                     value={bannerConfig.subtitle}
                     onChange={(e) => setBannerConfig(prev => ({ ...prev, subtitle: e.target.value }))}
                     placeholder="e.g. LIVE AUDIOVISUAL PERFORMANCE"
-                    className="w-full bg-black/60 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder:text-white/30 focus:border-lime-400 focus:outline-none font-mono"
+                    className="w-full bg-black/60 border border-white/15 rounded-md px-2.5 py-1.5 text-xs text-white placeholder:text-white/30 focus:border-neutral-300 focus:outline-none"
                   />
                 </div>
 
                 {/* Typography Font Selector */}
                 <div>
-                  <label className="text-[10px] font-mono uppercase tracking-wider text-white/50 block mb-1">
+                  <label className="text-xs text-neutral-400 block mb-1">
                     Typography Style ({FONT_OPTIONS.length} Fonts)
                   </label>
                   <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-0.5">
@@ -445,14 +441,14 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                         <button
                           key={f.id}
                           onClick={() => setBannerConfig(prev => ({ ...prev, font: f.id }))}
-                          className={`px-2 py-1.5 rounded-lg border text-left transition-all flex flex-col justify-center ${
+                          className={`px-2 py-1.5 rounded-md border text-left transition-all flex flex-col justify-center ${
                             isSel
-                              ? 'bg-lime-400 text-black border-lime-400 font-bold shadow-sm'
+                              ? 'studio-selected font-bold '
                               : 'bg-white/5 hover:bg-white/10 text-white/80 border-white/10'
                           }`}
                         >
                           <span className={`text-xs ${f.id} truncate leading-tight`}>{f.name}</span>
-                          <span className={`text-[8px] font-mono uppercase ${isSel ? 'text-black/60' : 'text-white/40'}`}>
+                          <span className={`text-xs   ${isSel ? 'text-white/70' : 'text-neutral-400'}`}>
                             {f.category}
                           </span>
                         </button>
@@ -463,10 +459,10 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
                 {/* Placement Selector */}
                 <div>
-                  <label className="text-[10px] font-mono uppercase tracking-wider text-white/50 block mb-1">
+                  <label className="text-xs text-neutral-400 block mb-1">
                     Position on Screen
                   </label>
-                  <div className="grid grid-cols-2 gap-1 font-mono text-[10px]">
+                  <div className="grid grid-cols-2 gap-1 text-xs">
                     {[
                       { id: 'bottom-left', label: 'Lower-Left VJ' },
                       { id: 'center', label: 'Hero Center' },
@@ -480,7 +476,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                           onClick={() => setBannerConfig(prev => ({ ...prev, position: pos.id as any }))}
                           className={`py-1 px-2 rounded-md border text-center transition-all ${
                             isSel
-                              ? 'bg-lime-400/20 text-lime-400 border-lime-400 font-bold'
+                              ? 'bg-neutral-300/20 text-neutral-300 border-neutral-300 font-bold'
                               : 'bg-white/5 hover:bg-white/10 text-white/60 border-white/10'
                           }`}
                         >
@@ -493,10 +489,10 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
                 {/* Visual Blend Mode */}
                 <div>
-                  <label className="text-[10px] font-mono uppercase tracking-wider text-white/50 block mb-1">
+                  <label className="text-xs text-neutral-400 block mb-1">
                     Visual Effect & Blend
                   </label>
-                  <div className="grid grid-cols-3 gap-1 font-mono text-[10px]">
+                  <div className="grid grid-cols-3 gap-1 text-xs">
                     {[
                       { id: 'difference', label: 'Color Invert' },
                       { id: 'glass', label: 'Frosted Glass' },
@@ -509,7 +505,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                           onClick={() => setBannerConfig(prev => ({ ...prev, style: s.id as any }))}
                           className={`py-1 px-1.5 rounded-md border text-center transition-all ${
                             isSel
-                              ? 'bg-lime-400/20 text-lime-400 border-lime-400 font-bold'
+                              ? 'bg-neutral-300/20 text-neutral-300 border-neutral-300 font-bold'
                               : 'bg-white/5 hover:bg-white/10 text-white/60 border-white/10'
                           }`}
                         >
@@ -525,13 +521,13 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
           {/* Audio Input Selector */}
           <div className="space-y-2">
-            <div className="text-[11px] font-mono uppercase tracking-widest text-white/50">Audio Input Source</div>
-            <div className="grid grid-cols-3 gap-1.5 p-1 bg-white/5 rounded-xl border border-white/10">
+            <div className="text-xs text-neutral-400">Audio Input Source</div>
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-white/5 rounded-md border border-white/10">
               <button
                 onClick={() => switchMode('demo')}
-                className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-mono transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-md text-xs  transition-all ${
                   audioMode === 'demo'
-                    ? 'bg-lime-400 text-black font-bold shadow-md'
+                    ? 'studio-selected font-bold '
                     : 'text-white/70 hover:text-white hover:bg-white/10'
                 }`}
               >
@@ -541,9 +537,9 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
               
               <button
                 onClick={() => switchMode('file')}
-                className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-mono transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-md text-xs  transition-all ${
                   audioMode === 'file'
-                    ? 'bg-lime-400 text-black font-bold shadow-md'
+                    ? 'studio-selected font-bold '
                     : 'text-white/70 hover:text-white hover:bg-white/10'
                 }`}
               >
@@ -553,9 +549,9 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
               <button
                 onClick={() => switchMode('mic')}
-                className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-mono transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-md text-xs  transition-all ${
                   audioMode === 'mic'
-                    ? 'bg-lime-400 text-black font-bold shadow-md'
+                    ? 'studio-selected font-bold '
                     : 'text-white/70 hover:text-white hover:bg-white/10'
                 }`}
               >
@@ -566,18 +562,18 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
           </div>
 
           {/* Active Audio Player Card & Real-Time Beat HUD */}
-          <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-3">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="truncate pr-2">
-                <span className="text-[10px] font-mono uppercase tracking-widest text-lime-400 block">Active Track</span>
+                <span className="text-xs text-neutral-300 block">Active Track</span>
                 <span className="text-xs font-medium text-white truncate block">{fileName}</span>
               </div>
               <button
                 onClick={togglePlayPause}
-                className="p-2.5 rounded-full bg-lime-400 text-black hover:bg-lime-300 transition-transform active:scale-95 shadow-md flex-shrink-0"
+                className="p-2.5 rounded-md studio-selected hover:bg-neutral-700 transition-transform active:scale-95 flex-shrink-0"
                 title={isPlaying ? "Pause" : "Play"}
               >
-                {isPlaying ? <Pause size={15} fill="black" /> : <Play size={15} fill="black" className="ml-0.5" />}
+                {isPlaying ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" className="ml-0.5" />}
               </button>
             </div>
 
@@ -587,18 +583,18 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
           {/* GEOMETRY & FRACTAL OBJECTS SELECTOR */}
           <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest text-white/60">
-              <Box size={13} className="text-lime-400" />
-              <span>Geometry & Fractal Mode</span>
+            <div className="flex items-center gap-1.5 text-xs text-white/60">
+
+              <span>Geometry</span>
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               {GEOMETRY_MODES.map((mode) => (
                 <button
                   key={mode.id}
                   onClick={() => setGeometryMode(mode.id)}
-                  className={`py-2 px-2 text-[11px] font-mono rounded-lg transition-all text-center leading-snug ${
+                  className={`py-2 px-2 text-xs  rounded-md transition-all text-center leading-snug ${
                     geometryMode === mode.id
-                      ? 'bg-lime-400 text-black font-bold shadow-md'
+                      ? 'studio-selected font-bold '
                       : 'bg-white/5 text-white/70 hover:bg-white/10 border border-white/5'
                   }`}
                 >
@@ -610,18 +606,19 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
           {/* VISUAL FX OVERLAY SELECTOR */}
           <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest text-white/60">
-              <Wand2 size={13} className="text-lime-400" />
-              <span>Visual FX Layer Overlay</span>
+            <div className="flex items-center gap-1.5 text-xs text-white/60">
+
+              <span>Visual FX</span>
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               {FX_MODES.map((fx) => (
                 <button
                   key={fx.id}
+                  aria-pressed={fxMode === fx.id}
                   onClick={() => setFxMode(fx.id)}
-                  className={`py-2 px-2 text-[11px] font-mono rounded-lg transition-all text-center ${
+                  className={`py-2 px-2 text-xs  rounded-md transition-all text-center ${
                     fxMode === fx.id
-                      ? 'bg-sky-400 text-black font-bold shadow-md'
+                      ? 'studio-selected font-bold '
                       : 'bg-white/5 text-white/70 hover:bg-white/10 border border-white/5'
                   }`}
                 >
@@ -629,22 +626,30 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                 </button>
               ))}
             </div>
+            {fxMode !== 0 && <div className="space-y-1 pt-1">
+              <div className="flex justify-between text-xs text-white/70">
+                <label htmlFor="fx-mix">FX Mix</label>
+                <output htmlFor="fx-mix">{Math.round(fxMix * 100)}%</output>
+              </div>
+              <input id="fx-mix" type="range" min="0" max="1" step="0.01" value={fxMix}
+                onChange={e => setFxMix(Number(e.target.value))} className="w-full accent-neutral-300" />
+            </div>}
           </div>
 
           {/* Kaleidoscope Fold Selector */}
           <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest text-white/60">
-              <Compass size={13} className="text-lime-400" />
-              <span>Polar Kaleidoscope Symmetry</span>
+            <div className="flex items-center gap-1.5 text-xs text-white/60">
+
+              <span>Kaleidoscope</span>
             </div>
             <div className="grid grid-cols-6 gap-1">
               {KALEIDOSCOPE_FOLDS.map((f) => (
                 <button
                   key={f.folds}
                   onClick={() => setKaleidoscopeFolds(f.folds)}
-                  className={`py-1.5 text-[10px] font-mono rounded-md transition-all text-center ${
+                  className={`py-1.5 text-xs  rounded-md transition-all text-center ${
                     kaleidoscopeFolds === f.folds
-                      ? 'bg-purple-400 text-black font-bold'
+                      ? 'studio-selected font-bold'
                       : 'bg-white/5 text-white/70 hover:bg-white/10'
                   }`}
                 >
@@ -658,13 +663,13 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
           {(geometryMode === 0 || geometryMode === 2) && (
             <div className="space-y-3 pt-2 border-t border-white/10">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-widest text-white/60">
-                  <Activity size={13} className="text-lime-400" />
+                <div className="flex items-center gap-1.5 text-xs text-white/60">
+                  <Activity size={13} className="text-neutral-300" />
                   <span>Julia Constant Coordinates</span>
                 </div>
                 <button
                   onClick={() => setJuliaC({ x: -0.8, y: 0.156 })}
-                  className="text-[10px] font-mono text-lime-400/70 hover:text-lime-400 uppercase tracking-wider transition-colors"
+                  className="text-xs text-neutral-300/70 hover:text-neutral-300 transition-colors"
                   title="Reset to Default (-0.8, 0.156)"
                 >
                   Reset Default
@@ -672,21 +677,21 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
               </div>
 
               {/* Real and Imaginary Coordinate Sliders with Rich Hover Explainers */}
-              <div className="space-y-3 p-3 bg-white/5 rounded-xl border border-white/10">
+              <div className="space-y-3">
                 
                 {/* Real Component (X) Slider */}
                 <div className="space-y-1.5">
-                  <div className="flex justify-between items-center text-[11px] font-mono uppercase tracking-wider text-white/70">
+                  <div className="flex justify-between items-center text-xs text-white/70">
                     <div 
                       className="flex items-center gap-1.5 group relative cursor-help"
                       title="Controls structural branching and filament connectivity. Left values create continuous solid rings and ribbons; right values fracture into intricate dendrites and island crystals."
                     >
                       <span className="font-semibold text-white/90">C Real (X)</span>
-                      <HelpCircle size={13} className="text-lime-400/80 group-hover:text-lime-400 transition-colors" />
+                      <HelpCircle size={13} className="text-neutral-300/80 group-hover:text-neutral-300 transition-colors" />
                       
                       {/* Rich Hover Explainer Tooltip */}
-                      <div className="absolute left-0 top-6 hidden group-hover:block z-50 w-64 p-2.5 rounded-lg bg-black/95 border border-lime-400/50 shadow-2xl text-[10px] normal-case text-white/90 backdrop-blur-xl pointer-events-none transition-all">
-                        <div className="font-bold text-lime-400 mb-0.5 font-mono uppercase tracking-wider text-[9px] flex items-center gap-1">
+                      <div className="absolute left-0 top-6 hidden group-hover:block z-50 w-64 p-2.5 rounded-md bg-black/95 border border-neutral-300/50 text-xs normal-case text-white/90 backdrop-blur-xl pointer-events-none transition-all">
+                        <div className="font-bold text-neutral-300 mb-0.5 text-xs flex items-center gap-1">
                           <Activity size={10} />
                           <span>Julia Constant: Real Axis (X)</span>
                         </div>
@@ -695,9 +700,9 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                         </p>
                       </div>
                     </div>
-                    <span className="text-lime-400 font-bold tabular-nums">{juliaC.x.toFixed(3)}</span>
+                    <span className="text-neutral-300 font-bold tabular-nums">{juliaC.x.toFixed(3)}</span>
                   </div>
-                  <span className="text-[9px] font-mono text-white/40 block leading-tight">
+                  <span className="text-xs text-neutral-400 block leading-tight">
                     Structural branching & filament connectivity
                   </span>
                   <input
@@ -707,23 +712,23 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                     step="0.002"
                     value={juliaC.x}
                     onChange={(e) => setJuliaC({ ...juliaC, x: parseFloat(e.target.value) })}
-                    className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-lime-400"
+                    className="w-full h-1 bg-white/20 rounded-md appearance-none cursor-pointer accent-neutral-300"
                   />
                 </div>
 
                 {/* Imaginary Component (Y) Slider */}
                 <div className="space-y-1.5 pt-1 border-t border-white/5">
-                  <div className="flex justify-between items-center text-[11px] font-mono uppercase tracking-wider text-white/70">
+                  <div className="flex justify-between items-center text-xs text-white/70">
                     <div 
                       className="flex items-center gap-1.5 group relative cursor-help"
                       title="Controls the rotational spiral vortex and curl direction. Sets clockwise vs. counter-clockwise swirling vorticity and adjusts how tightly the recursive arms pinch around center."
                     >
                       <span className="font-semibold text-white/90">C Imaginary (Y)</span>
-                      <HelpCircle size={13} className="text-lime-400/80 group-hover:text-lime-400 transition-colors" />
+                      <HelpCircle size={13} className="text-neutral-300/80 group-hover:text-neutral-300 transition-colors" />
                       
                       {/* Rich Hover Explainer Tooltip */}
-                      <div className="absolute left-0 top-6 hidden group-hover:block z-50 w-64 p-2.5 rounded-lg bg-black/95 border border-lime-400/50 shadow-2xl text-[10px] normal-case text-white/90 backdrop-blur-xl pointer-events-none transition-all">
-                        <div className="font-bold text-lime-400 mb-0.5 font-mono uppercase tracking-wider text-[9px] flex items-center gap-1">
+                      <div className="absolute left-0 top-6 hidden group-hover:block z-50 w-64 p-2.5 rounded-md bg-black/95 border border-neutral-300/50 text-xs normal-case text-white/90 backdrop-blur-xl pointer-events-none transition-all">
+                        <div className="font-bold text-neutral-300 mb-0.5 text-xs flex items-center gap-1">
                           <Compass size={10} />
                           <span>Julia Constant: Imaginary Axis (Y)</span>
                         </div>
@@ -732,9 +737,9 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                         </p>
                       </div>
                     </div>
-                    <span className="text-lime-400 font-bold tabular-nums">{juliaC.y.toFixed(3)}</span>
+                    <span className="text-neutral-300 font-bold tabular-nums">{juliaC.y.toFixed(3)}</span>
                   </div>
-                  <span className="text-[9px] font-mono text-white/40 block leading-tight">
+                  <span className="text-xs text-neutral-400 block leading-tight">
                     Rotational spiral vortex & arm curling
                   </span>
                   <input
@@ -744,14 +749,14 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                     step="0.002"
                     value={juliaC.y}
                     onChange={(e) => setJuliaC({ ...juliaC, y: parseFloat(e.target.value) })}
-                    className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-lime-400"
+                    className="w-full h-1 bg-white/20 rounded-md appearance-none cursor-pointer accent-neutral-300"
                   />
                 </div>
               </div>
 
               {/* Julia Presets */}
               <div className="space-y-1.5">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-white/50">Mathematical Presets</div>
+                <div className="text-xs text-neutral-400">Mathematical Presets</div>
                 <div className="grid grid-cols-2 gap-1.5">
                   {JULIA_PRESETS.map((preset) => {
                     const isActive = Math.abs(juliaC.x - preset.x) < 0.015 && Math.abs(juliaC.y - preset.y) < 0.015;
@@ -759,14 +764,14 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                       <button
                         key={preset.name}
                         onClick={() => setJuliaC({ x: preset.x, y: preset.y })}
-                        className={`px-2.5 py-1.5 text-xs font-mono rounded-lg transition-all text-left flex justify-between items-center ${
+                        className={`px-2.5 py-1.5 text-xs  rounded-md transition-all text-left flex justify-between items-center ${
                           isActive
-                            ? 'bg-lime-400 text-black font-bold shadow-sm'
+                            ? 'studio-selected font-bold '
                             : 'bg-white/5 text-white/70 hover:bg-white/10'
                         }`}
                       >
                         <span>{preset.name}</span>
-                        <span className={`text-[9px] ${isActive ? 'text-black/60' : 'text-white/40'}`}>
+                        <span className={`text-xs ${isActive ? 'text-white/70' : 'text-neutral-400'}`}>
                           {preset.x > 0 ? `+${preset.x}` : preset.x}
                         </span>
                       </button>
@@ -782,14 +787,14 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
             
             {/* Master Engine Motion & Orbit Speed Slider */}
             <div className="space-y-1.5">
-              <div className="flex justify-between items-center text-xs font-mono uppercase tracking-wider text-white/70">
+              <div className="flex justify-between items-center text-xs text-white/70">
                 <label className="flex items-center gap-1.5">
-                  <Gauge size={13} className="text-lime-400" />
+                  <Gauge size={13} className="text-neutral-300" />
                   <span>Engine Motion & Orbit Speed</span>
                 </label>
-                <span className="text-lime-400 font-bold tabular-nums">{rotSpeed.toFixed(2)}x</span>
+                <span className="text-neutral-300 font-bold tabular-nums">{rotSpeed.toFixed(2)}x</span>
               </div>
-              <span className="text-[9px] font-mono text-white/40 block leading-tight">
+              <span className="text-xs text-neutral-400 block leading-tight">
                 Sets the pace of the orbit and background drift
               </span>
               <input
@@ -799,7 +804,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                 step="0.05"
                 value={rotSpeed}
                 onChange={(e) => setRotSpeed(parseFloat(e.target.value))}
-                className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-lime-400"
+                className="w-full h-1 bg-white/20 rounded-md appearance-none cursor-pointer accent-neutral-300"
               />
               <div className="grid grid-cols-4 gap-1 pt-0.5">
                 {[
@@ -811,9 +816,9 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                   <button
                     key={preset.label}
                     onClick={() => setRotSpeed(preset.val)}
-                    className={`py-1 px-1 text-[9px] font-mono rounded border transition-all ${
+                    className={`py-1 px-1 text-xs  rounded border transition-all ${
                       Math.abs(rotSpeed - preset.val) < 0.05
-                        ? 'bg-lime-400 text-black border-lime-400 font-bold shadow-sm'
+                        ? 'studio-selected font-bold '
                         : 'bg-white/5 text-white/60 border-white/5 hover:bg-white/10 hover:text-white'
                     }`}
                   >
@@ -825,7 +830,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
             {/* Volumetric Glow (Constrained) */}
             <div className="space-y-1.5">
-              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+              <div className="flex justify-between text-xs text-white/60">
                 <label>{geometryMode === 0 ? 'Luminance & Glow Depth' : 'Glow & Specular Intensity'}</label>
                 <span className="tabular-nums">{glowIntensity.toFixed(1)}</span>
               </div>
@@ -836,17 +841,17 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                 step="0.1"
                 value={glowIntensity}
                 onChange={(e) => setGlowIntensity(parseFloat(e.target.value))}
-                className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white"
+                className="w-full h-1 bg-white/20 rounded-md appearance-none cursor-pointer accent-white"
               />
             </div>
 
             {/* Audio Sensitivity (Constrained within Screen Boundaries) */}
             <div className="space-y-1.5">
-              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                <label>Audio Reactivity Boost</label>
-                <span className="text-lime-400 font-bold tabular-nums">{sensitivity.toFixed(1)}x</span>
+              <div className="flex justify-between text-xs text-white/60">
+                <label>Sensitivity</label>
+                <span className="text-neutral-300 font-bold tabular-nums">{sensitivity.toFixed(1)}x</span>
               </div>
-              <span className="text-[9px] font-mono text-white/40 block leading-tight">
+              <span className="text-xs text-neutral-400 block leading-tight">
                 Sets how far the geometry moves in response to sound
               </span>
               <input
@@ -856,13 +861,24 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                 step="0.1"
                 value={sensitivity}
                 onChange={(e) => setSensitivity(parseFloat(e.target.value))}
-                className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-lime-400"
+                className="w-full h-1 bg-white/20 rounded-md appearance-none cursor-pointer accent-neutral-300"
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-white/60">
+                <label htmlFor="motion-response">Response</label>
+                <span className="text-neutral-300">{response < 0.33 ? 'Tight' : response < 0.67 ? 'Balanced' : 'Fluid'}</span>
+              </div>
+              <input id="motion-response" type="range" min="0" max="1" step="0.01"
+                value={response} onChange={event => setResponse(Number(event.target.value))}
+                className="w-full h-1 bg-white/20 rounded-md appearance-none cursor-pointer accent-neutral-300" />
+              <div className="flex justify-between text-xs text-white/55"><span>Quick rebound</span><span>Long release</span></div>
             </div>
 
             {/* Camera Depth (Zoom - Screen Boundary Constrained) */}
             <div className="space-y-1.5">
-              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+              <div className="flex justify-between text-xs text-white/60">
                 <label>Camera Depth (Zoom)</label>
                 <span className="tabular-nums">{zoom.toFixed(2)}</span>
               </div>
@@ -873,13 +889,13 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                 step="0.01"
                 value={zoom}
                 onChange={(e) => setZoom(parseFloat(e.target.value))}
-                className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white"
+                className="w-full h-1 bg-white/20 rounded-md appearance-none cursor-pointer accent-white"
               />
             </div>
 
             {/* Iterations */}
             <div className="space-y-1.5">
-              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+              <div className="flex justify-between text-xs text-white/60">
                 <label>Complexity / Ray Steps</label>
                 <span className="tabular-nums">{iterations}</span>
               </div>
@@ -890,15 +906,15 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                 step="2"
                 value={iterations}
                 onChange={(e) => setIterations(parseInt(e.target.value))}
-                className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white"
+                className="w-full h-1 bg-white/20 rounded-md appearance-none cursor-pointer accent-white"
               />
             </div>
 
             {/* CLUB EDM COLOR PALETTE SUITE */}
             <div className="space-y-2 pt-1 border-t border-white/10">
-              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                <label>Dark Alternative Palette Presets</label>
-                <span className="text-red-400 font-bold tabular-nums">{colorBase.h.toFixed(2)}</span>
+              <div className="flex justify-between text-xs text-white/60">
+                <label>Color palette</label>
+                <span className="text-neutral-300 font-bold tabular-nums">{colorBase.h.toFixed(2)}</span>
               </div>
 
               {/* Quick Select Buttons for Dark Alternative Themes */}
@@ -916,9 +932,9 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                     <button
                       key={theme.name}
                       onClick={() => setColorBase({ h: theme.h, s: theme.s, l: theme.l })}
-                      className={`px-2 py-1.5 rounded-lg border text-left font-mono text-[10px] flex items-center justify-between transition-all ${
+                      className={`px-2 py-1.5 rounded-md border text-left  text-xs flex items-center justify-between transition-all ${
                         isCurrent
-                          ? 'bg-white/15 border-white/40 text-white font-bold shadow-sm'
+                          ? 'bg-white/15 border-white/40 text-white font-bold '
                           : 'bg-white/5 border-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                       }`}
                     >
@@ -926,7 +942,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: theme.color }} />
                         <span>{theme.name}</span>
                       </div>
-                      {isCurrent && <span className="text-[8px] text-red-400 font-bold">ON</span>}
+                      {isCurrent && <span className="text-xs text-neutral-300 font-bold">ON</span>}
                     </button>
                   );
                 })}
@@ -934,7 +950,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
 
               {/* Fine Palette Shift Slider */}
               <div className="space-y-1 pt-1">
-                <div className="flex justify-between text-[10px] font-mono text-white/50">
+                <div className="flex justify-between text-xs text-neutral-400">
                   <span>Custom Drift Shift</span>
                 </div>
                 <input
@@ -944,7 +960,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                   step="0.01"
                   value={colorBase.h}
                   onChange={(e) => setColorBase({ ...colorBase, h: parseFloat(e.target.value) })}
-                  className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white"
+                  className="w-full h-1 bg-white/20 rounded-md appearance-none cursor-pointer accent-white"
                 />
               </div>
             </div>

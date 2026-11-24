@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { vertexShaderSource, fragmentShaderSource } from '../shaders/fractal';
+import { vertexShaderSource, fragmentShaderSource, echoFragmentSource } from '../shaders/fractal';
 import { AudioMotion } from '../utils/AudioMotion';
 import { Dampener } from '../utils/Dampener';
 
@@ -48,8 +48,10 @@ interface VisualizerProps {
   colorBase: { h: number; s: number; l: number };
   juliaC: { x: number; y: number };
   sensitivity: number;
+  response: number;
   geometryMode: number;
   fxMode: number;
+  fxMix: number;
   kaleidoscopeFolds: number;
   rotSpeed: number;
   glowIntensity: number;
@@ -128,6 +130,27 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
     gl.enableVertexAttribArray(positionLocation);
     gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
+    const echoShader = createShader(gl.FRAGMENT_SHADER, echoFragmentSource);
+    const echoProgram = gl.createProgram();
+    if (echoProgram && echoShader) {
+      gl.attachShader(echoProgram, vertexShader);
+      gl.attachShader(echoProgram, echoShader);
+      gl.bindAttribLocation(echoProgram, positionLocation, 'a_position');
+      gl.linkProgram(echoProgram);
+    }
+    const echoReady = echoProgram && gl.getProgramParameter(echoProgram, gl.LINK_STATUS);
+    const echoLocs = echoReady ? {
+      scene: gl.getUniformLocation(echoProgram, 'u_scene'),
+      pixel: gl.getUniformLocation(echoProgram, 'u_pixel'),
+      attack: gl.getUniformLocation(echoProgram, 'u_attack'),
+      mix: gl.getUniformLocation(echoProgram, 'u_mix'),
+    } : null;
+    const echoFrame = gl.createFramebuffer();
+    const echoTexture = gl.createTexture();
+    let echoWidth = 0;
+    let echoHeight = 0;
+    let echoComplete = false;
+
     locationsRef.current = {
       u_resolution: gl.getUniformLocation(program, 'u_resolution'),
       u_motion_time: gl.getUniformLocation(program, 'u_motion_time'),
@@ -136,6 +159,8 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_c: gl.getUniformLocation(program, 'u_c'),
       u_iterations: gl.getUniformLocation(program, 'u_iterations'),
       u_color_base: gl.getUniformLocation(program, 'u_color_base'),
+      u_hat: gl.getUniformLocation(program, 'u_hat'),
+      u_detail: gl.getUniformLocation(program, 'u_detail'),
       u_audio_low: gl.getUniformLocation(program, 'u_audio_low'),
       u_audio_mid: gl.getUniformLocation(program, 'u_audio_mid'),
       u_audio_high: gl.getUniformLocation(program, 'u_audio_high'),
@@ -152,6 +177,8 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       u_beat_kick: gl.getUniformLocation(program, 'u_beat_kick'),
       u_beat_snare: gl.getUniformLocation(program, 'u_beat_snare'),
       u_geometry_mode: gl.getUniformLocation(program, 'u_geometry_mode'),
+      u_fx_waves: gl.getUniformLocation(program, 'u_fx_waves'),
+      u_fx_mix: gl.getUniformLocation(program, 'u_fx_mix'),
       u_fx_mode: gl.getUniformLocation(program, 'u_fx_mode'),
       u_kaleidoscope_folds: gl.getUniformLocation(program, 'u_kaleidoscope_folds'),
       u_glow_intensity: gl.getUniformLocation(program, 'u_glow_intensity'),
@@ -183,6 +210,8 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
 
     // Keep frame delivery steady when a scene or recording pushes the GPU.
     let quality = 1;
+    let detail = 1;
+    let slowFrames = 0;
     let budgetStart = performance.now();
     let budgetFrames = 0;
     let recoveryWindows = 0;
@@ -231,21 +260,30 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       const dt = Math.min(0.067, Math.max(0, frameMs * 0.001));
       lastFrameTime = nowMs;
 
-      if (!document.hidden && frameMs < 200) budgetFrames++;
+      if (!document.hidden && frameMs < 200) {
+        budgetFrames++;
+        if (frameMs > 22) slowFrames++;
+      }
       if (nowMs - budgetStart >= 1000) {
         const frameMsAverage = (nowMs - budgetStart) / budgetFrames;
         recoveryWindows = frameMsAverage < 18 ? recoveryWindows + 1 : 0;
         const previousQuality = quality;
         if (!document.hidden && budgetFrames >= 8) {
-          if (frameMsAverage > 22) quality = Math.max(0.62, quality * 0.85);
+          if (slowFrames > budgetFrames * 0.1 || frameMsAverage > 22) {
+            recoveryWindows = 0;
+            if (detail && currentProps.geometryMode !== 0) detail = 0;
+            else quality = Math.max(0.62, quality * 0.85);
+          }
           if (recoveryWindows >= 3) {
-            quality = Math.min(1, quality + 0.07);
+            if (quality < 1) quality = Math.min(1, quality + 0.07);
+            else detail = 1;
             recoveryWindows = 0;
           }
         }
         if (quality !== previousQuality) handleResize();
         budgetStart = nowMs;
         budgetFrames = 0;
+        slowFrames = 0;
       }
 
       motionTime += motionSpeed.update(currentProps.rotSpeed, dt) * dt * 0.7;
@@ -254,8 +292,10 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
         gl.uniform2f(locs.u_resolution, canvasRef.current.width, canvasRef.current.height);
       }
 
-      const historySteps = audio.update(currentProps.analyser, currentProps.analysisRevision, nowMs, dt, currentProps.sensitivity);
+      const historySteps = audio.update(currentProps.analyser, currentProps.analysisRevision, nowMs, dt, currentProps.sensitivity, currentProps.response);
       const bands = audio.bands;
+      gl.uniform1f(locs.u_hat, audio.hat);
+      gl.uniform1f(locs.u_detail, detail);
       const smoothedSub = (bands[0] + bands[1]) * 0.5;
       const smoothedKick = (bands[2] + bands[3]) * 0.5;
       const smoothedMid = (bands[6] + bands[7] + bands[8]) / 3;
@@ -358,11 +398,45 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
       gl.uniform4fv(locs.u_kick_waves, audio.kickWaves);
 
       gl.uniform1i(locs.u_geometry_mode, currentProps.geometryMode);
-      gl.uniform1i(locs.u_fx_mode, currentProps.fxMode);
+      gl.uniform1i(locs.u_fx_mode, currentProps.fxMix > 0 ? currentProps.fxMode : 0);
+      gl.uniform1f(locs.u_fx_mix, currentProps.fxMix);
+      gl.uniform4fv(locs.u_fx_waves, audio.fxWaves);
       gl.uniform1f(locs.u_kaleidoscope_folds, currentProps.kaleidoscopeFolds);
       gl.uniform1f(locs.u_glow_intensity, currentProps.glowIntensity);
 
+      const echoActive = currentProps.fxMode === 2 && currentProps.fxMix > 0 && audio.snare > 0.005
+        && echoLocs && echoTexture && echoFrame;
+      const width = gl.drawingBufferWidth;
+      const height = gl.drawingBufferHeight;
+      if (echoActive) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, echoFrame);
+        if (width !== echoWidth || height !== echoHeight) {
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, echoTexture);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, echoTexture, 0);
+          echoComplete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+          echoWidth = width;
+          echoHeight = height;
+          gl.activeTexture(gl.TEXTURE0);
+        }
+        if (!echoComplete) gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      }
       gl.drawArrays(gl.TRIANGLES, 0, 6);
+      if (echoActive && echoComplete) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.useProgram(echoProgram);
+        gl.uniform1i(echoLocs.scene, 1);
+        gl.uniform2f(echoLocs.pixel, 1 / width, 1 / height);
+        gl.uniform1f(echoLocs.attack, audio.snare);
+        gl.uniform1f(echoLocs.mix, currentProps.fxMix);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.useProgram(program);
+      }
 
       if (propsRef.current.onRenderFrame && canvasRef.current) {
         propsRef.current.onRenderFrame(canvasRef.current);
@@ -385,6 +459,10 @@ export const Visualizer: React.FC<VisualizerProps> = (props) => {
           programRef.current = null;
         }
         if (vertexShader) gl.deleteShader(vertexShader);
+        gl.deleteProgram(echoProgram);
+        gl.deleteShader(echoShader);
+        gl.deleteFramebuffer(echoFrame);
+        gl.deleteTexture(echoTexture);
         if (fragmentShader) gl.deleteShader(fragmentShader);
         if (positionBuffer) gl.deleteBuffer(positionBuffer);
         if (audioTexture) gl.deleteTexture(audioTexture);
