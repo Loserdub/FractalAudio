@@ -48,10 +48,13 @@ body {
 .font-space { font-family: 'Space Grotesk', sans-serif; }
 
 :root {
-  --studio-surface: #101010;
-  --studio-line: #353535;
-  --studio-silver: #c4c4c4;
-  --studio-text: #f2f2f2;
+  --studio-surface: #0D1220;
+  --studio-raised: #1B2540;
+  --studio-muted: #A8B6CF;
+  --studio-record: #E99CAE;
+  --studio-line: #394967;
+  --studio-accent: #89BCFF;
+  --studio-text: #EDF2FF;
   --studio-radius: 8px;
 }
 
@@ -67,12 +70,12 @@ body {
   width: min(24rem, calc(100vw - 2rem));
   max-height: calc(100dvh - 9rem);
   overscroll-behavior: contain;
-  scrollbar-color: #505050 transparent;
+  scrollbar-color: var(--studio-line) transparent;
   scrollbar-width: thin;
 }
 
 .studio-panel > div + div {
-  border-top: 1px solid #292929;
+  border-top: 1px solid var(--studio-line);
   padding-top: 1rem;
 }
 
@@ -81,15 +84,15 @@ body {
 .studio-surface button { cursor: pointer; font-weight: 500; }
 .studio-panel button { min-height: 30px; }
 .studio-selected {
-  background: #373737;
-  color: var(--studio-text);
-  box-shadow: inset 0 0 0 1px #676767;
+  background: var(--studio-raised);
+  color: var(--studio-accent);
+  box-shadow: inset 0 0 0 1px var(--studio-accent);
 }
-.studio-selected:hover { background: #464646; }
-.studio-primary { background: var(--studio-silver); color: #101010; }
-.studio-primary:hover { background: #dedede; }
+.studio-selected:hover { background: #253555; }
+.studio-primary { background: var(--studio-accent); color: var(--studio-surface); }
+.studio-primary:hover { background: #afd1ff; }
 :where(button, a, input):focus-visible {
-  outline: 2px solid var(--studio-silver);
+  outline: 2px solid var(--studio-accent);
   outline-offset: 2px;
 }
 
@@ -98,7 +101,7 @@ body {
   width: 100%;
   height: 24px;
   appearance: auto;
-  accent-color: var(--studio-silver);
+  accent-color: var(--studio-accent);
   background: transparent;
   cursor: pointer;
 }
@@ -106,8 +109,17 @@ body {
 .studio-panel :is(output, .tabular-nums) {
   font-family: ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
-  color: var(--studio-silver);
+  color: var(--studio-accent);
 }
+
+.studio-surface button:not(.studio-primary, .studio-selected, .studio-recording) {
+  background-color: var(--studio-raised);
+}
+.studio-surface button:not(.studio-primary, .studio-selected, .studio-recording):hover { background-color: #253555; }
+.studio-surface :is(.text-neutral-400, .text-neutral-300, .text-white\/60, .text-white\/70) { color: var(--studio-muted); }
+.studio-surface .studio-recording { color: var(--studio-record); border-color: var(--studio-record); }
+.studio-surface .text-white { color: var(--studio-text); }
+.studio-record-dot { background: var(--studio-record); }
 
 .studio-welcome { max-height: calc(100dvh - 2rem); overflow-y: auto; }
 .studio-dock { gap: 6px; }

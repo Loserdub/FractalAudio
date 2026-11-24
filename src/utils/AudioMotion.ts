@@ -41,7 +41,7 @@ export class AudioMotion {
   private seeded = false;
   private kickMean = 0;
   private snareMean = 0;
-  private level = 0.06;
+  private readonly bandReferences = new Float32Array(BAND_WEIGHTS.length).fill(0.25);
   private kickPeak = 0;
   private snarePeak = 0;
   private centroidTarget = 0.25;
@@ -71,7 +71,9 @@ export class AudioMotion {
       this.seeded = false;
       this.kickMean = 0;
       this.snareMean = 0;
-      this.level = 0.06;
+      this.bandReferences.fill(0.25);
+      this.bands.fill(0);
+      this.targets.fill(0);
       if (analyser && this.spectrum.length !== analyser.frequencyBinCount) {
         this.spectrum = new Uint8Array(analyser.frequencyBinCount);
         this.previous = new Uint8Array(analyser.frequencyBinCount);
@@ -100,17 +102,17 @@ export class AudioMotion {
     this.centroid = damp(this.centroid, this.centroidTarget, dt, 0.24);
     this.flatness = damp(this.flatness, this.flatnessTarget, dt, 0.28);
     this.flux = envelope(this.flux, this.fluxTarget, dt, 0.06, 0.24);
-    this.kick = envelope(this.kick, this.kickPeak, dt, 0.022, 0.12);
-    this.snare = envelope(this.snare, this.snarePeak, dt, 0.020, 0.105);
-    this.kickPeak *= Math.exp(-dt / 0.10);
-    this.snarePeak *= Math.exp(-dt / 0.085);
+    this.kick = Math.max(this.kickPeak, this.kick * Math.exp(-dt / (0.06 * (0.65 + response))));
+    this.snare = Math.max(this.snarePeak, this.snare * Math.exp(-dt / (0.055 * (0.65 + response))));
+    this.kickPeak = this.snarePeak = 0;
     const queue = analyser && transientQueues.get(analyser);
     if (queue) {
       const clock = analyser.context.currentTime;
       for (const hit of queue) {
         const age = clock - hit.time;
         if (hit.time < this.sourceStart || age > 0.35) continue;
-        this.hits.push(hit);
+        // Hold the peak on the first drawn frame, including after a render stall.
+        this.hits.push({ ...hit, time: clock });
         if (hit.band === 0) {
           this.previousKick = this.lastKick;
           this.previousKickStrength = this.lastKickStrength;
@@ -122,10 +124,11 @@ export class AudioMotion {
       queue.length = 0;
       while (this.hits.length && clock - this.hits[0].time > 0.65) this.hits.shift();
       this.kick = this.snare = this.hat = 0;
-      // Evaluate each critically damped impulse at its actual audio-clock age.
+      // A fast peak and exponential release keep closely spaced hits distinct.
       for (const hit of this.hits) {
-        const age = Math.max(0, clock - hit.time) * 44 / (0.65 + response);
-        const displacement = hit.strength * sensitivity * age * Math.exp(1 - age);
+        const age = Math.max(0, clock - hit.time - 0.016);
+        const release = (hit.band === 2 ? 0.035 : 0.060) * (0.65 + response);
+        const displacement = hit.strength * sensitivity * Math.exp(-age / release);
         if (hit.band === 0) this.kick = Math.min(1, this.kick + displacement);
         else if (hit.band === 1) this.snare = Math.min(1, this.snare + displacement);
         else this.hat = Math.min(1, this.hat + displacement);
@@ -194,11 +197,15 @@ export class AudioMotion {
       }
 
       const mean = total / Math.max(1, count);
-      this.level = envelope(this.level, mean, dt, 0.45, 2.0);
-      const gain = sensitivity * Math.min(1.7, 0.20 / Math.max(0.06, this.level));
+      // Soft-knee each band against its own recent level so cymbals cannot duck the bass.
       for (let i = 0; i < this.targets.length; i++) {
-        const strength = Math.max(0, this.targets[i] - 0.10) * gain;
-        this.targets[i] = strength / (0.8 + strength);
+        const magnitude = this.targets[i] / BAND_WEIGHTS[i];
+        // Expand the analyser's logarithmic bins into a perceptual amplitude.
+        const amplitude = Math.max(0, Math.pow(10, (magnitude - 1) * 2) - 0.025);
+        const reference = envelope(this.bandReferences[i], amplitude, dt, 0.55, 2.5);
+        this.bandReferences[i] = reference;
+        const movement = amplitude * sensitivity / (0.18 + reference);
+        this.targets[i] = Math.tanh(movement * Math.sqrt(BAND_WEIGHTS[i]) * 0.8);
       }
 
       this.centroidTarget = total > 0.01 ? Math.min(1, weighted / total / 6000) : 0.25;

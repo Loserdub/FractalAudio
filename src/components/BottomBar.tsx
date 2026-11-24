@@ -95,7 +95,7 @@ export const BottomBar: React.FC<BottomBarProps> = React.memo(({
           }}
           className={`px-3.5 py-2 rounded-md text-xs  font-bold  transition-all flex items-center gap-1.5 ${
             audioMode === 'mic' && isListening
-              ? 'bg-neutral-300/20 text-neutral-300 border border-neutral-300/50 '
+              ? 'studio-selected '
               : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
           }`}
           title={audioMode === 'mic' ? "Turn Off Microphone" : "Turn On Microphone"}
@@ -109,7 +109,7 @@ export const BottomBar: React.FC<BottomBarProps> = React.memo(({
           onClick={() => fileInputRef.current?.click()}
           className={`px-3.5 py-2 rounded-md text-xs  font-bold  transition-all flex items-center gap-1.5 ${
             audioMode === 'file'
-              ? 'bg-neutral-300/20 text-neutral-300 border border-neutral-300/50 '
+              ? 'studio-selected '
               : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
           }`}
           title="Upload MP3 / WAV Song"
@@ -123,7 +123,7 @@ export const BottomBar: React.FC<BottomBarProps> = React.memo(({
           onClick={() => switchMode('demo')}
           className={`p-2 rounded-md transition-all ${
             audioMode === 'demo'
-              ? 'text-neutral-300 bg-neutral-300/15 border border-neutral-300/40'
+              ? 'studio-selected'
               : 'text-white/60 hover:text-white hover:bg-white/10'
           }`}
           title="Switch to Demo Track"
@@ -146,10 +146,10 @@ export const BottomBar: React.FC<BottomBarProps> = React.memo(({
         ) : (
           <button
             onClick={stopRecording}
-            className="px-4 py-2 rounded-md bg-zinc-900 border border-neutral-300 text-neutral-300 hover:bg-neutral-600/20 text-xs font-bold transition-all flex items-center gap-1.5"
+            className="px-4 py-2 rounded-md studio-recording bg-zinc-900 border border-neutral-300 text-neutral-300 hover:bg-neutral-600/20 text-xs font-bold transition-all flex items-center gap-1.5"
             title="Stop Recording Video"
           >
-            <span className="w-2.5 h-2.5 rounded-sm bg-neutral-700" />
+            <span className="w-2.5 h-2.5 rounded-sm studio-record-dot" />
             <span>Stop ({formatTime(recordingSeconds)})</span>
           </button>
         )}

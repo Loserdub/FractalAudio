@@ -44,6 +44,8 @@ export const useAudioAnalyzer = () => {
       analyser.fftSize = ctx.sampleRate > 50000 ? 4096 : 2048;
       // Leave transient detail for the visualizer's attack and release envelopes.
       analyser.smoothingTimeConstant = 0.05;
+      // Keep loud bass bins below the analyser ceiling so accents remain measurable.
+      analyser.maxDecibels = -8;
 
       const dest = ctx.createMediaStreamDestination();
       analyser.connect(dest);

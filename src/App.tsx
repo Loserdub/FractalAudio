@@ -250,7 +250,7 @@ export default function App() {
             <h1 className="text-3xl font-light tracking-tighter opacity-90 group-hover:opacity-100 transition-opacity flex items-center gap-2.5 text-white">
               <span>Fractal<span className="font-bold">Audio</span></span>
               {isRecording && (
-                <span className="w-2.5 h-2.5 rounded-full bg-neutral-300 inline-block" />
+                <span className="w-2.5 h-2.5 rounded-full studio-record-dot inline-block" />
               )}
             </h1>
             <p className="text-xs font-medium text-white/60 group-hover:text-white/90 transition-colors pointer-events-none mt-0.5">

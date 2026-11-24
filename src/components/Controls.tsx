@@ -111,8 +111,8 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
         <div 
           className="py-1.5 px-2 rounded-md border text-center transition-all duration-100 flex items-center justify-center gap-1.5"
           style={{
-            backgroundColor: kickIntensity > 0.15 ? `rgba(195, 195, 195, ${0.05 + kickIntensity * 0.22})` : 'rgba(255, 255, 255, 0.03)',
-            borderColor: kickIntensity > 0.15 ? 'rgba(195, 195, 195, 0.8)' : 'rgba(255, 255, 255, 0.1)',
+            backgroundColor: kickIntensity > 0.15 ? `rgba(137, 188, 255, ${0.05 + kickIntensity * 0.22})` : 'rgba(255, 255, 255, 0.03)',
+            borderColor: kickIntensity > 0.15 ? 'rgba(137, 188, 255, 0.8)' : 'rgba(255, 255, 255, 0.1)',
 
           }}
         >
@@ -125,8 +125,8 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
         <div 
           className="py-1.5 px-2 rounded-md border text-center transition-all duration-100 flex items-center justify-center gap-1.5"
           style={{
-            backgroundColor: snareIntensity > 0.15 ? `rgba(195, 195, 195, ${0.05 + snareIntensity * 0.22})` : 'rgba(255, 255, 255, 0.03)',
-            borderColor: snareIntensity > 0.15 ? 'rgba(195, 195, 195, 0.8)' : 'rgba(255, 255, 255, 0.1)',
+            backgroundColor: snareIntensity > 0.15 ? `rgba(137, 188, 255, ${0.05 + snareIntensity * 0.22})` : 'rgba(255, 255, 255, 0.03)',
+            borderColor: snareIntensity > 0.15 ? 'rgba(137, 188, 255, 0.8)' : 'rgba(255, 255, 255, 0.1)',
 
           }}
         >
@@ -156,7 +156,7 @@ const AudioSpectrumHUD: React.FC = React.memo(() => {
                   className="w-full transition-all duration-75 rounded-xs"
                   style={{
                     height: `${Math.min(100, Math.max(6, val * 100))}%`,
-                    backgroundColor: 'var(--studio-silver)',
+                    backgroundColor: 'var(--studio-accent)',
 
                   }}
                 />
@@ -303,7 +303,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
           title={isOpen ? "Collapse Controls" : "Open Controls"}
         >
           {isRecording && (
-            <span className="w-2.5 h-2.5 rounded-full bg-neutral-700" />
+            <span className="w-2.5 h-2.5 rounded-full studio-record-dot" />
           )}
           {isOpen ? <ChevronUp size={20} /> : <Settings size={20} />}
         </button>
@@ -335,7 +335,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
               </div>
               {isRecording && (
                 <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-neutral-300/20 border border-neutral-300/40 text-xs text-neutral-300">
-                  <span className="w-2 h-2 rounded-full bg-neutral-700" />
+                  <span className="w-2 h-2 rounded-full studio-record-dot" />
                   <span>REC ({formatTime(recordingSeconds)})</span>
                 </div>
               )}
@@ -353,9 +353,9 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
               ) : (
                 <button
                   onClick={stopRecording}
-                  className="py-2.5 px-3 rounded-md bg-zinc-900 border border-neutral-300/60 text-neutral-300 hover:bg-neutral-600/20 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                  className="py-2.5 px-3 rounded-md studio-recording bg-zinc-900 border border-neutral-300/60 text-neutral-300 hover:bg-neutral-600/20 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
                 >
-                  <span className="w-2.5 h-2.5 rounded-sm bg-neutral-700" />
+                  <span className="w-2.5 h-2.5 rounded-sm studio-record-dot" />
                   <span>Stop ({formatTime(recordingSeconds)})</span>
                 </button>
               )}
@@ -476,7 +476,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                           onClick={() => setBannerConfig(prev => ({ ...prev, position: pos.id as any }))}
                           className={`py-1 px-2 rounded-md border text-center transition-all ${
                             isSel
-                              ? 'bg-neutral-300/20 text-neutral-300 border-neutral-300 font-bold'
+                              ? 'studio-selected font-bold'
                               : 'bg-white/5 hover:bg-white/10 text-white/60 border-white/10'
                           }`}
                         >
@@ -505,7 +505,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                           onClick={() => setBannerConfig(prev => ({ ...prev, style: s.id as any }))}
                           className={`py-1 px-1.5 rounded-md border text-center transition-all ${
                             isSel
-                              ? 'bg-neutral-300/20 text-neutral-300 border-neutral-300 font-bold'
+                              ? 'studio-selected font-bold'
                               : 'bg-white/5 hover:bg-white/10 text-white/60 border-white/10'
                           }`}
                         >
@@ -934,7 +934,7 @@ export const Controls: React.FC<ControlsProps> = React.memo(({
                       onClick={() => setColorBase({ h: theme.h, s: theme.s, l: theme.l })}
                       className={`px-2 py-1.5 rounded-md border text-left  text-xs flex items-center justify-between transition-all ${
                         isCurrent
-                          ? 'bg-white/15 border-white/40 text-white font-bold '
+                          ? 'studio-selected font-bold '
                           : 'bg-white/5 border-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                       }`}
                     >

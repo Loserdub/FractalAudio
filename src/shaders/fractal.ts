@@ -212,9 +212,9 @@ vec4 renderLiquidJulia2D(vec2 uv) {
     // 2. Dynamic Scale / Zoom centered on u_offset safely bounded within screen limits
     float rUv = length(uv);
     float historyWave2D = readAudioHistory(0.15, min(0.92, 0.035 + rUv * 0.55));
-    float zoomFactor = (1.75 / max(0.2, u_zoom)) * (1.0 - u_audio_sub * 0.18 - u_beat_kick * 0.09 - historyWave2D * 0.045);
+    float zoomFactor = (1.75 / max(0.2, u_zoom)) * (1.0 - u_audio_sub * 0.24 - u_beat_kick * 0.17 - historyWave2D * 0.045);
     float crest = kickWave(rUv * 2.8, u_kick_waves.xy) + 0.65 * kickWave(rUv * 2.8, u_kick_waves.zw);
-    vec2 p = rot * (uv * (zoomFactor - 0.24 * crest)) + u_offset;
+    vec2 p = rot * (uv * zoomFactor * (1.0 - 0.22 * min(crest, 1.0))) + u_offset;
     
     // 3. Harmonic Audio Orbit on Julia Constant C (lively, rhythmic breathing)
     vec2 c_mod = vec2(
@@ -280,7 +280,7 @@ vec4 renderLiquidJulia2D(vec2 uv) {
 
 // 3D Quaternion Julia SDF (Smoothly bounded for continuous 3D stability)
 float mapJulia3D(vec3 p, out float trap) {
-    vec4 z = vec4(p, 0.0);
+    vec4 z = vec4(p / (1.0 + vec3(0.18, 0.07, 0.10) * u_beat_kick), 0.0);
     
     // Stable quaternion constant C with responsive harmonic audio orbit
     vec4 c = vec4(
@@ -319,6 +319,7 @@ float mapJulia3D(vec3 p, out float trap) {
 // Band 1 (Sub 2): Core geometry volume & mass expansion
 // Band 7 (Mid Warm): Rotational azimuth momentum
 float mapMandelbulb(vec3 p, out float trap) {
+    p /= 1.0 + 0.16 * u_beat_kick;
     vec3 w = p;
     float dr = 1.0;
     float r = 0.0;
@@ -367,10 +368,10 @@ float mapInkFlow(vec3 p, out float trap) {
         cos(p.x * 2.65 + phase * 0.88 - p.y * 0.90)
     );
     vec3 q = (p + bend * (0.24 + mids * 0.57)) / (1.0 + bass * vec3(0.22, 0.43, 0.16));
-    q.x += u_beat_snare * 0.18 * sin(q.y * 3.0);
+    q.x += u_beat_snare * 0.40 * smoothstep(-0.65, 0.60, q.y);
     float distanceFromOrigin = length(p + vec3(0.0, 0.78, 0.0));
     float wave = kickWave(distanceFromOrigin, u_kick_waves.xy) + kickWave(distanceFromOrigin, u_kick_waves.zw) * 0.65;
-    float radius = 0.83 + bass * 0.24 + wave * 0.32;
+    float radius = 0.83 + bass * 0.38 + u_beat_kick * 0.18 + wave * 0.36;
     float folds = sin(q.x * 2.8 - phase * 0.75) * cos(q.y * 3.0 + phase * 0.45) * sin(q.z * 2.9 + q.x);
     float ripple = sin(q.y * 10.0 + q.z * 7.0 - phase * 1.25) * (u_audio_high * 0.022 + u_beat_snare * 0.050);
 
@@ -387,7 +388,7 @@ float mapSriYantra(vec3 p, out float trap) {
     float a = atan(pScaled.y, pScaled.x);
     
     // Band 9: middle mandala ring — vocal low exclusive
-    float ring1 = abs(r - (0.75 + sin(u_motion_time * 0.15 + u_bands[1] * 0.4) * 0.12 + u_bands[2] * 0.15 + u_beat_kick * 0.09)) - 0.035;
+    float ring1 = abs(r - (0.75 + sin(u_motion_time * 0.15 + u_bands[1] * 0.4) * 0.12 + u_bands[2] * 0.15 + u_beat_kick * 0.20)) - 0.035;
     float ring2 = abs(r - (0.50 + u_bands[9] * 0.14)) - 0.025;
     float ring3 = abs(r - (0.28 + u_bands[12] * 0.08)) - 0.015;
     
@@ -408,7 +409,7 @@ float mapMetatronCube(vec3 p, out float trap) {
     
     vec3 absP = abs(pScaled);
     // Band 9: outer sphere radii — vocal low exclusive
-    float outerSpheres = length(absP - vec3(0.55 + u_beat_kick * 0.14)) - (0.14 + u_bands[9] * 0.12 + u_bands[12] * 0.08);
+    float outerSpheres = length(absP - vec3(0.55 + u_beat_kick * 0.24)) - (0.14 + u_bands[9] * 0.12 + u_bands[12] * 0.08);
     
     float beam = length(vec2(length(pScaled.xy) - 0.55, pScaled.z)) - (0.02 + u_bands[7] * 0.05 + u_bands[14] * 0.04);
     
@@ -430,7 +431,7 @@ float mapTorusKnot(vec3 p, out float trap) {
     float angleKnot = a * 1.5 + u_beat_snare * 0.55;
     vec2 knotP = vec2(sin(angleKnot), cos(angleKnot)) * (0.18 + u_bands[5] * 0.12);
     
-    float knotD = length(cl - knotP) - (0.08 + u_bands[11] * 0.06 + u_bands[14] * 0.05);
+    float knotD = length(cl - knotP) - (0.08 + u_beat_kick * 0.10 + u_bands[11] * 0.06 + u_bands[14] * 0.05);
     trap = r;
     return (knotD / 1.5);
 }
@@ -445,7 +446,7 @@ float mapPrismPyramid(vec3 p, out float trap) {
     float pyr = max(abs(q.x) + q.y, max(abs(q.z) + q.y, -q.y - 0.8)) * 0.7071;
     
     // Band 12: crystal size — pres low exclusive
-    vec3 crystalP = q - vec3(0.0, 0.2 + sin(u_motion_time * 0.45 + u_bands[1] * 0.4) * 0.20 + u_bands[2] * 0.20 + u_beat_kick * 0.14, 0.0);
+    vec3 crystalP = q - vec3(0.0, 0.2 + sin(u_motion_time * 0.45 + u_bands[1] * 0.4) * 0.20 + u_bands[2] * 0.20 + u_beat_kick * 0.38, 0.0);
     crystalP = rotateY(u_motion_time * 0.45 + u_bands[7] * 0.9 + u_bands[9] * 0.5) * crystalP;
     float crystal = (abs(crystalP.x) + abs(crystalP.y) + abs(crystalP.z)) * 0.5773 - (0.16 + u_bands[12] * 0.20 + u_bands[16] * 0.12);
     
@@ -462,7 +463,7 @@ float mapCosmicTunnel(vec3 p, out float trap) {
     // Band 8: aperture cavity breath — snare body exclusive
     float haloRadius = 1.1 + u_bands[8] * 0.24 + u_audio_sub * 0.32 + historyWave;
     float front = kickWave(p.z + 2.0, u_kick_waves.xy) + 0.65 * kickWave(p.z + 2.0, u_kick_waves.zw);
-    haloRadius += front * 0.22;
+    haloRadius += front * 0.38 + u_beat_kick * 0.19;
     float tunnel = abs(r - haloRadius) - 0.07;
     // Band 8: rib depth — snare body exclusive
     float rib = -0.08 * u_hat + abs(sin(p.z * 2.5 + u_motion_time * 1.2 + u_bands[1] * 1.8)) - (0.05 + u_bands[8] * 0.10 + u_bands[12] * 0.06);
